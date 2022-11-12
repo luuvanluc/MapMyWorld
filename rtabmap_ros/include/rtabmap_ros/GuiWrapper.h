@@ -47,7 +47,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace rtabmap
 {
 	class MainWindow;
-	class PreferencesDialog;
 }
 
 class QApplication;
@@ -68,13 +67,12 @@ private:
 	void goalPathCallback(const rtabmap_ros::GoalConstPtr & goalMsg, const nav_msgs::PathConstPtr & pathMsg);
 	void goalReachedCallback(const std_msgs::BoolConstPtr & value);
 
-	virtual void commonMultiCameraCallback(
+	virtual void commonDepthCallback(
 			const nav_msgs::OdometryConstPtr & odomMsg,
 			const rtabmap_ros::UserDataConstPtr & userDataMsg,
 			const std::vector<cv_bridge::CvImageConstPtr> & imageMsgs,
 			const std::vector<cv_bridge::CvImageConstPtr> & depthMsgs,
 			const std::vector<sensor_msgs::CameraInfo> & cameraInfoMsgs,
-			const std::vector<sensor_msgs::CameraInfo> & depthCameraInfoMsgs,
 			const sensor_msgs::LaserScan& scan2dMsg,
 			const sensor_msgs::PointCloud2& scan3dMsg,
 			const rtabmap_ros::OdomInfoConstPtr& odomInfoMsg,
@@ -114,11 +112,9 @@ private:
 	void processRequestedMap(const rtabmap_ros::MapData & map);
 
 private:
-	rtabmap::PreferencesDialog * prefDialog_;
 	rtabmap::MainWindow * mainWindow_;
 	std::string cameraNodeName_;
 	double lastOdomInfoUpdateTime_;
-	std::string rtabmapNodeName_;
 
 	// odometry subscription stuffs
 	std::string frameId_;
@@ -128,8 +124,6 @@ private:
 	bool odomSensorSync_;
 	double maxOdomUpdateRate_;
 	tf::TransformListener tfListener_;
-
-	ros::Publisher republishNodeDataPub_;
 
 	message_filters::Subscriber<rtabmap_ros::Info> infoTopic_;
 	message_filters::Subscriber<rtabmap_ros::MapData> mapDataTopic_;

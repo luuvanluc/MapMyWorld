@@ -48,11 +48,6 @@ namespace rtabmap_ros {
 		cameraInfoMsgs.push_back(image2Msg->rgb_camera_info); \
 		cameraInfoMsgs.push_back(image3Msg->rgb_camera_info); \
 		cameraInfoMsgs.push_back(image4Msg->rgb_camera_info); \
-		std::vector<sensor_msgs::CameraInfo> depthCameraInfoMsgs; \
-		depthCameraInfoMsgs.push_back(image1Msg->depth_camera_info); \
-		depthCameraInfoMsgs.push_back(image2Msg->depth_camera_info); \
-		depthCameraInfoMsgs.push_back(image3Msg->depth_camera_info); \
-		depthCameraInfoMsgs.push_back(image4Msg->depth_camera_info); \
 		std::vector<rtabmap_ros::GlobalDescriptor> globalDescriptorMsgs; \
 		std::vector<std::vector<rtabmap_ros::KeyPoint> > localKeyPoints; \
 		std::vector<std::vector<rtabmap_ros::Point3f> > localPoints3d; \
@@ -92,7 +87,7 @@ void CommonDataSubscriber::rgbd4Callback(
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4Scan2dCallback(
 		const rtabmap_ros::RGBDImageConstPtr& image1Msg,
@@ -107,7 +102,7 @@ void CommonDataSubscriber::rgbd4Scan2dCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4Scan3dCallback(
 		const rtabmap_ros::RGBDImageConstPtr& image1Msg,
@@ -122,7 +117,7 @@ void CommonDataSubscriber::rgbd4Scan3dCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::LaserScan scanMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4ScanDescCallback(
 		const rtabmap_ros::RGBDImageConstPtr& image1Msg,
@@ -140,7 +135,7 @@ void CommonDataSubscriber::rgbd4ScanDescCallback(
 	{
 		globalDescriptorMsgs.push_back(scanDescMsg->global_descriptor);
 	}
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4InfoCallback(
 		const rtabmap_ros::RGBDImageConstPtr& image1Msg,
@@ -155,7 +150,7 @@ void CommonDataSubscriber::rgbd4InfoCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 
 // 2 RGBD + Odom
@@ -172,7 +167,7 @@ void CommonDataSubscriber::rgbd4OdomCallback(
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomScan2dCallback(
 		const nav_msgs::OdometryConstPtr & odomMsg,
@@ -187,7 +182,7 @@ void CommonDataSubscriber::rgbd4OdomScan2dCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomScan3dCallback(
 		const nav_msgs::OdometryConstPtr & odomMsg,
@@ -202,7 +197,7 @@ void CommonDataSubscriber::rgbd4OdomScan3dCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::LaserScan scanMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomScanDescCallback(
 		const nav_msgs::OdometryConstPtr & odomMsg,
@@ -220,7 +215,7 @@ void CommonDataSubscriber::rgbd4OdomScanDescCallback(
 	{
 		globalDescriptorMsgs.push_back(scanDescMsg->global_descriptor);
 	}
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomInfoCallback(
 		const nav_msgs::OdometryConstPtr & odomMsg,
@@ -235,7 +230,7 @@ void CommonDataSubscriber::rgbd4OdomInfoCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 
 #ifdef RTABMAP_SYNC_USER_DATA
@@ -253,7 +248,7 @@ void CommonDataSubscriber::rgbd4DataCallback(
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4DataScan2dCallback(
 		const rtabmap_ros::UserDataConstPtr& userDataMsg,
@@ -268,7 +263,7 @@ void CommonDataSubscriber::rgbd4DataScan2dCallback(
 	nav_msgs::OdometryConstPtr odomMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4DataScan3dCallback(
 		const rtabmap_ros::UserDataConstPtr& userDataMsg,
@@ -283,7 +278,7 @@ void CommonDataSubscriber::rgbd4DataScan3dCallback(
 	nav_msgs::OdometryConstPtr odomMsg; // Null
 	sensor_msgs::LaserScan scanMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4DataScanDescCallback(
 		const rtabmap_ros::UserDataConstPtr& userDataMsg,
@@ -301,7 +296,7 @@ void CommonDataSubscriber::rgbd4DataScanDescCallback(
 	{
 		globalDescriptorMsgs.push_back(scanDescMsg->global_descriptor);
 	}
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4DataInfoCallback(
 		const rtabmap_ros::UserDataConstPtr& userDataMsg,
@@ -316,7 +311,7 @@ void CommonDataSubscriber::rgbd4DataInfoCallback(
 	nav_msgs::OdometryConstPtr odomMsg; // Null
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 
 // 2 RGBD + Odom + User Data
@@ -333,7 +328,7 @@ void CommonDataSubscriber::rgbd4OdomDataCallback(
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomDataScan2dCallback(
 		const nav_msgs::OdometryConstPtr& odomMsg,
@@ -348,7 +343,7 @@ void CommonDataSubscriber::rgbd4OdomDataScan2dCallback(
 
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, *scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomDataScan3dCallback(
 		const nav_msgs::OdometryConstPtr& odomMsg,
@@ -363,7 +358,7 @@ void CommonDataSubscriber::rgbd4OdomDataScan3dCallback(
 
 	sensor_msgs::LaserScan scanMsg; // Null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, *scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomDataScanDescCallback(
 		const nav_msgs::OdometryConstPtr& odomMsg,
@@ -381,7 +376,7 @@ void CommonDataSubscriber::rgbd4OdomDataScanDescCallback(
 	{
 		globalDescriptorMsgs.push_back(scanDescMsg->global_descriptor);
 	}
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanDescMsg->scan, scanDescMsg->scan_cloud, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 void CommonDataSubscriber::rgbd4OdomDataInfoCallback(
 		const nav_msgs::OdometryConstPtr& odomMsg,
@@ -396,7 +391,7 @@ void CommonDataSubscriber::rgbd4OdomDataInfoCallback(
 
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
-	commonMultiCameraCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, depthCameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
+	commonDepthCallback(odomMsg, userDataMsg, imageMsgs, depthMsgs, cameraInfoMsgs, scanMsg, scan3dMsg, odomInfoMsg, globalDescriptorMsgs, localKeyPoints, localPoints3d, localDescriptors);
 }
 #endif
 
@@ -434,7 +429,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL7(CommonDataSubscriber, rgbd4OdomDataScanDesc, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
+			SYNC_DECL7(rgbd4OdomDataScanDesc, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
 		}
 		else if(subscribeScan2d)
 		{
@@ -445,7 +440,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL7(CommonDataSubscriber, rgbd4OdomDataScan2d, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
+			SYNC_DECL7(rgbd4OdomDataScan2d, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
 		}
 		else if(subscribeScan3d)
 		{
@@ -456,17 +451,17 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL7(CommonDataSubscriber, rgbd4OdomDataScan3d, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
+			SYNC_DECL7(rgbd4OdomDataScan3d, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
 		}
 		else if(subscribeOdomInfo)
 		{
 			subscribedToOdomInfo_ = true;
 			odomInfoSub_.subscribe(nh, "odom_info", queueSize);
-			SYNC_DECL7(CommonDataSubscriber, rgbd4OdomDataInfo, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
+			SYNC_DECL7(rgbd4OdomDataInfo, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
 		}
 		else
 		{
-			SYNC_DECL6(CommonDataSubscriber, rgbd4OdomData, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
+			SYNC_DECL6(rgbd4OdomData, approxSync, queueSize, odomSub_, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
 		}
 	}
 	else
@@ -483,7 +478,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL6(CommonDataSubscriber, rgbd4OdomScanDesc, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
+			SYNC_DECL6(rgbd4OdomScanDesc, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
 		}
 		else if(subscribeScan2d)
 		{
@@ -494,7 +489,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL6(CommonDataSubscriber, rgbd4OdomScan2d, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
+			SYNC_DECL6(rgbd4OdomScan2d, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
 		}
 		else if(subscribeScan3d)
 		{
@@ -505,17 +500,17 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL6(CommonDataSubscriber, rgbd4OdomScan3d, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
+			SYNC_DECL6(rgbd4OdomScan3d, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
 		}
 		else if(subscribeOdomInfo)
 		{
 			subscribedToOdomInfo_ = true;
 			odomInfoSub_.subscribe(nh, "odom_info", queueSize);
-			SYNC_DECL6(CommonDataSubscriber, rgbd4OdomInfo, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
+			SYNC_DECL6(rgbd4OdomInfo, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
 		}
 		else
 		{
-			SYNC_DECL5(CommonDataSubscriber, rgbd4Odom, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
+			SYNC_DECL5(rgbd4Odom, approxSync, queueSize, odomSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
 		}
 	}
 #ifdef RTABMAP_SYNC_USER_DATA
@@ -531,7 +526,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL6(CommonDataSubscriber, rgbd4DataScanDesc, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
+			SYNC_DECL6(rgbd4DataScanDesc, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
 		}
 		else if(subscribeScan2d)
 		{
@@ -542,7 +537,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL6(CommonDataSubscriber, rgbd4DataScan2d, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
+			SYNC_DECL6(rgbd4DataScan2d, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
 		}
 		else if(subscribeScan3d)
 		{
@@ -553,17 +548,17 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL6(CommonDataSubscriber, rgbd4DataScan3d, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
+			SYNC_DECL6(rgbd4DataScan3d, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
 		}
 		else if(subscribeOdomInfo)
 		{
 			subscribedToOdomInfo_ = true;
 			odomInfoSub_.subscribe(nh, "odom_info", queueSize);
-			SYNC_DECL6(CommonDataSubscriber, rgbd4DataInfo, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
+			SYNC_DECL6(rgbd4DataInfo, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
 		}
 		else
 		{
-			SYNC_DECL5(CommonDataSubscriber, rgbd4Data, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
+			SYNC_DECL5(rgbd4Data, approxSync, queueSize, userDataSub_, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
 		}
 	}
 #endif
@@ -578,7 +573,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL5(CommonDataSubscriber, rgbd4ScanDesc, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
+			SYNC_DECL5(rgbd4ScanDesc, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanDescSub_);
 		}
 		else if(subscribeScan2d)
 		{
@@ -589,7 +584,7 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL5(CommonDataSubscriber, rgbd4Scan2d, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
+			SYNC_DECL5(rgbd4Scan2d, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scanSub_);
 		}
 		else if(subscribeScan3d)
 		{
@@ -600,17 +595,17 @@ void CommonDataSubscriber::setupRGBD4Callbacks(
 				subscribedToOdomInfo_ = false;
 				ROS_WARN("subscribe_odom_info ignored...");
 			}
-			SYNC_DECL5(CommonDataSubscriber, rgbd4Scan3d, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
+			SYNC_DECL5(rgbd4Scan3d, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), scan3dSub_);
 		}
 		else if(subscribeOdomInfo)
 		{
 			subscribedToOdomInfo_ = true;
 			odomInfoSub_.subscribe(nh, "odom_info", queueSize);
-			SYNC_DECL5(CommonDataSubscriber, rgbd4Info, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
+			SYNC_DECL5(rgbd4Info, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]), odomInfoSub_);
 		}
 		else
 		{
-			SYNC_DECL4(CommonDataSubscriber, rgbd4, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
+			SYNC_DECL4(rgbd4, approxSync, queueSize, (*rgbdSubs_[0]), (*rgbdSubs_[1]), (*rgbdSubs_[2]), (*rgbdSubs_[3]));
 		}
 	}
 }

@@ -42,7 +42,7 @@ void CommonDataSubscriber::stereoCallback(
 	sensor_msgs::LaserScan scanMsg; // null
 	sensor_msgs::PointCloud2 scan3dMsg; // null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonSingleCameraCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scanMsg, scan3dMsg, odomInfoMsg);
+	commonStereoCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scanMsg, scan3dMsg, odomInfoMsg);
 }
 void CommonDataSubscriber::stereoInfoCallback(
 		const sensor_msgs::ImageConstPtr& leftImageMsg,
@@ -56,7 +56,7 @@ void CommonDataSubscriber::stereoInfoCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::LaserScan scan2dMsg; // null
 	sensor_msgs::PointCloud2 scan3dMsg; // null
-	commonSingleCameraCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scan2dMsg, scan3dMsg, odomInfoMsg);
+	commonStereoCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scan2dMsg, scan3dMsg, odomInfoMsg);
 }
 
 // Stereo + Odom
@@ -72,7 +72,7 @@ void CommonDataSubscriber::stereoOdomCallback(
 	sensor_msgs::LaserScan scanMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // null
 	rtabmap_ros::OdomInfoConstPtr odomInfoMsg; // null
-	commonSingleCameraCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scanMsg, scan3dMsg, odomInfoMsg);
+	commonStereoCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scanMsg, scan3dMsg, odomInfoMsg);
 }
 void CommonDataSubscriber::stereoOdomInfoCallback(
 		const nav_msgs::OdometryConstPtr & odomMsg,
@@ -86,7 +86,7 @@ void CommonDataSubscriber::stereoOdomInfoCallback(
 	rtabmap_ros::UserDataConstPtr userDataMsg; // Null
 	sensor_msgs::LaserScan scan2dMsg; // Null
 	sensor_msgs::PointCloud2 scan3dMsg; // Null
-	commonSingleCameraCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scan2dMsg, scan3dMsg, odomInfoMsg);
+	commonStereoCallback(odomMsg, userDataMsg, cv_bridge::toCvShare(leftImageMsg), cv_bridge::toCvShare(rightImageMsg), *leftCamInfoMsg, *rightCamInfoMsg, scan2dMsg, scan3dMsg, odomInfoMsg);
 }
 
 void CommonDataSubscriber::setupStereoCallbacks(
@@ -121,11 +121,11 @@ void CommonDataSubscriber::setupStereoCallbacks(
 		{
 			subscribedToOdomInfo_ = true;
 			odomInfoSub_.subscribe(nh, "odom_info", queueSize);
-			SYNC_DECL6(CommonDataSubscriber, stereoOdomInfo, approxSync, queueSize, odomSub_, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_, odomInfoSub_);
+			SYNC_DECL6(stereoOdomInfo, approxSync, queueSize, odomSub_, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_, odomInfoSub_);
 		}
 		else
 		{
-			SYNC_DECL5(CommonDataSubscriber, stereoOdom, approxSync, queueSize, odomSub_, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_);
+			SYNC_DECL5(stereoOdom, approxSync, queueSize, odomSub_, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_);
 		}
 	}
 	else
@@ -134,11 +134,11 @@ void CommonDataSubscriber::setupStereoCallbacks(
 		{
 			subscribedToOdomInfo_ = true;
 			odomInfoSub_.subscribe(nh, "odom_info", queueSize);
-			SYNC_DECL5(CommonDataSubscriber, stereoInfo, approxSync, queueSize, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_, odomInfoSub_);
+			SYNC_DECL5(stereoInfo, approxSync, queueSize, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_, odomInfoSub_);
 		}
 		else
 		{
-			SYNC_DECL4(CommonDataSubscriber, stereo, approxSync, queueSize, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_);
+			SYNC_DECL4(stereo, approxSync, queueSize, imageRectLeft_, imageRectRight_, cameraInfoLeft_, cameraInfoRight_);
 		}
 	}
 }

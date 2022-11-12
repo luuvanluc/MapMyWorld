@@ -96,6 +96,14 @@ OdometryROS::~OdometryROS()
 		warningThread_->join();
 		delete warningThread_;
 	}
+	ros::NodeHandle & pnh = getPrivateNodeHandle();
+	if(pnh.ok())
+	{
+		for(ParametersMap::iterator iter=parameters_.begin(); iter!=parameters_.end(); ++iter)
+		{
+			pnh.deleteParam(iter->first);
+		}
+	}
 
 	delete odometry_;
 }
@@ -107,7 +115,6 @@ void OdometryROS::onInit()
 
 	odomPub_ = nh.advertise<nav_msgs::Odometry>("odom", 1);
 	odomInfoPub_ = nh.advertise<rtabmap_ros::OdomInfo>("odom_info", 1);
-	odomInfoLitePub_ = nh.advertise<rtabmap_ros::OdomInfo>("odom_info_lite", 1);
 	odomLocalMap_ = nh.advertise<sensor_msgs::PointCloud2>("odom_local_map", 1);
 	odomLocalScanMap_ = nh.advertise<sensor_msgs::PointCloud2>("odom_local_scan_map", 1);
 	odomLastFrame_ = nh.advertise<sensor_msgs::PointCloud2>("odom_last_frame", 1);
@@ -301,12 +308,7 @@ void OdometryROS::onInit()
 		std::string vStr;
 		if(pnh.getParam(iter->first, vStr))
 		{
-			if(!iter->second.second.empty() && parameters_.find(iter->second.second)!=parameters_.end())
-			{
-				NODELET_WARN("Rtabmap: Parameter name changed: \"%s\" -> \"%s\". The new parameter is already used with value \"%s\", ignoring the old one with value \"%s\".",
-						iter->first.c_str(), iter->second.second.c_str(), parameters_.find(iter->second.second)->second.c_str(), vStr.c_str());
-			}
-			else if(iter->second.first && parameters_.find(iter->second.second) != parameters_.end())
+			if(iter->second.first && parameters_.find(iter->second.second) != parameters_.end())
 			{
 				// can be migrated
 				parameters_.at(iter->second.second)= vStr;
@@ -327,12 +329,6 @@ void OdometryROS::onInit()
 				}
 			}
 		}
-	}
-
-	// set private parameters
-	for(ParametersMap::iterator iter=parameters_.begin(); iter!=parameters_.end(); ++iter)
-	{
-		pnh.setParam(iter->first, iter->second);
 	}
 
 	Parameters::parse(parameters_, Parameters::kOdomResetCountdown(), resetCountdown_);
@@ -358,7 +354,7 @@ void OdometryROS::onInit()
 
 	odomStrategy_ = 0;
 	Parameters::parse(this->parameters(), Parameters::kOdomStrategy(), odomStrategy_);
-	if(waitIMUToinit_)
+	if(waitIMUToinit_ || odometry_->canProcessIMU())
 	{
 		int queueSize = 10;
 		pnh.param("queue_size", queueSize, queueSize);
@@ -423,19 +419,17 @@ Transform OdometryROS::getTransform(const std::string & fromFrameId, const std::
 	return transform;
 }
 
-rtabmap::Transform OdometryROS::velocityGuess() const
-{
-	if(odometry_)
-	{
-		return odometry_->getVelocityGuess();
-	}
-	return rtabmap::Transform();
-}
-
 void OdometryROS::callbackIMU(const sensor_msgs::ImuConstPtr& msg)
 {
 	if(!this->isPaused())
 	{
+		if(!odometry_->canProcessIMU() &&
+		   !odometry_->getPose().isIdentity())
+		{
+			// For non-inertial odometry approaches, IMU is only used to initialize the initial orientation below
+			return;
+		}
+
 		double stamp = msg->header.stamp.toSec();
 		rtabmap::Transform localTransform = rtabmap::Transform::getIdentity();
 		if(this->frameId().compare(msg->header.frame_id) != 0)
@@ -457,76 +451,125 @@ void OdometryROS::callbackIMU(const sensor_msgs::ImuConstPtr& msg)
 				cv::Mat(3,3,CV_64FC1,(void*)msg->linear_acceleration_covariance.data()).clone(),
 				localTransform);
 
-		imus_.insert(std::make_pair(stamp, imu));
-
-		if(bufferedData_.first.isValid() && stamp > bufferedData_.first.stamp())
+		if(!odometry_->canProcessIMU())
 		{
-			SensorData data = bufferedData_.first;
-			bufferedData_.first = SensorData();
-			processData(data, bufferedData_.second);
+			if(!odometry_->getPose().isIdentity())
+			{
+				// For these approaches, IMU is only used to initialize the initial orientation
+				return;
+			}
+
+			// align with gravity
+			if(!imu.localTransform().isNull())
+			{
+				if(imu.orientation()[0] != 0 || imu.orientation()[1] != 0 || imu.orientation()[2] != 0 || imu.orientation()[3] != 0)
+				{
+					Transform rotation(0,0,0, imu.orientation()[0], imu.orientation()[1], imu.orientation()[2], imu.orientation()[3]);
+					// orientation includes roll and pitch but not yaw in local transform
+					rotation = Transform(0,0,imu.localTransform().theta()) * rotation * imu.localTransform().rotation().inverse();
+					this->reset(rotation);
+					float r,p,y;
+					rotation.getEulerAngles(r,p,y);
+					NODELET_WARN("odometry: Initialized odometry with IMU's orientation (rpy = %f %f %f).", r,p,y);
+				}
+				else if(imu.linearAcceleration()[0]!=0.0 &&
+					imu.linearAcceleration()[1]!=0.0 &&
+					imu.linearAcceleration()[2]!=0.0 &&
+					!imu.localTransform().isNull())
+				{
+					Eigen::Vector3f n(imu.linearAcceleration()[0], imu.linearAcceleration()[1], imu.linearAcceleration()[2]);
+					n = imu.localTransform().rotation().toEigen3f() * n;
+					n.normalize();
+					Eigen::Vector3f z(0,0,1);
+					//get rotation from z to n;
+					Eigen::Matrix3f R;
+					R = Eigen::Quaternionf().setFromTwoVectors(n,z);
+					Transform rotation(
+							R(0,0), R(0,1), R(0,2), 0,
+							R(1,0), R(1,1), R(1,2), 0,
+							R(2,0), R(2,1), R(2,2), 0);
+					this->reset(rotation);
+					float r,p,y;
+					rotation.getEulerAngles(r,p,y);
+					NODELET_WARN("odometry: Initialized odometry with IMU's accelerometer (rpy = %f %f %f).", r,p,y);
+				}
+			}
 		}
-
-		if(imus_.size() > 1000)
+		else
 		{
-			imus_.erase(imus_.begin());
+			imus_.insert(std::make_pair(stamp, imu));
+			
+			if(bufferedData_.first.isValid() && stamp > bufferedData_.first.stamp())
+			{
+				SensorData data = bufferedData_.first;
+				bufferedData_.first = SensorData();
+				processData(data, bufferedData_.second.first, bufferedData_.second.second);
+			}
+			
+			if(imus_.size() > 1000)
+			{
+				imus_.erase(imus_.begin());
+			}
 		}
 	}
 }
 
-void OdometryROS::processData(SensorData & data, const std_msgs::Header & header)
+void OdometryROS::processData(const SensorData & data, const ros::Time & stamp, const std::string & sensorFrameId)
 {
 	if((waitIMUToinit_ && !imuProcessed_) && odometry_->framesProcessed() == 0 && odometry_->getPose().isIdentity() && imus_.empty())
 	{
-		NODELET_WARN("odometry: waiting imu (%s) to initialize orientation (wait_imu_to_init=true)", imuSub_.getTopic().c_str());
+		NODELET_WARN("odometry: waiting imu to initialize orientation (wait_imu_to_init=true)");
 		return;
 	}
 
-	if(waitIMUToinit_ && (imus_.empty() || imus_.rbegin()->first < header.stamp.toSec()))
+	if(odometry_->canProcessIMU())
 	{
-		//NODELET_WARN("No imu received with higher stamp than last image (%f)! Buffering this image until we get more imu msgs...", stamp.toSec());
-
-		// keep in cache to process later when we will receive imu msgs
-		if(bufferedData_.first.isValid())
+		if(waitIMUToinit_ && (imus_.empty() || imus_.rbegin()->first<stamp.toSec()))
 		{
-			NODELET_ERROR("Overwriting previous data! Make sure IMU is "
-					"published faster than data rate. (last image stamp "
-					"buffered=%f and new one is %f, last imu stamp received=%f)",
-					bufferedData_.first.stamp(), data.stamp(), imus_.empty()?0:imus_.rbegin()->first);
+			//NODELET_WARN("No imu received with higher stamp than last image (%f)! Buffering this image until we get more imu msgs...", stamp.toSec());
+		
+			// keep in cache to process later when we will receive imu msgs
+			if(bufferedData_.first.isValid())
+			{
+				NODELET_ERROR("Overwriting previous data! Make sure IMU is "
+						"published faster than data rate. (last image stamp "
+						"buffered=%f and new one is %f, last imu stamp received=%f)",
+						bufferedData_.first.stamp(), data.stamp(), imus_.empty()?0:imus_.rbegin()->first);
+			}
+			bufferedData_.first = data;
+			bufferedData_.second.first = stamp;
+			bufferedData_.second.second = sensorFrameId;
+			return;
 		}
-		bufferedData_.first = data;
-		bufferedData_.second = header;
-		return;
+		// process all imu data up to current image stamp (or just after so that underlying odom approach can do interpolation of imu at image stamp)
+		std::map<double, rtabmap::IMU>::iterator iterEnd = imus_.lower_bound(stamp.toSec());
+		if(iterEnd!= imus_.end())
+		{
+			++iterEnd;
+		}
+		for(std::map<double, rtabmap::IMU>::iterator iter=imus_.begin(); iter!=iterEnd;)
+		{
+			//NODELET_WARN("img callback: process imu   %f", iter->first);
+			SensorData dataIMU(iter->second, 0, iter->first);
+			odometry_->process(dataIMU);
+			imus_.erase(iter++);
+			imuProcessed_ = true;
+		}
 	}
-	// process all imu data up to current image stamp (or just after so that underlying odom approach can do interpolation of imu at image stamp)
-	std::map<double, rtabmap::IMU>::iterator iterEnd = imus_.lower_bound(header.stamp.toSec());
-	if(iterEnd!= imus_.end())
-	{
-		++iterEnd;
-	}
-	for(std::map<double, rtabmap::IMU>::iterator iter=imus_.begin(); iter!=iterEnd;)
-	{
-		//NODELET_WARN("img callback: process imu   %f", iter->first);
-		SensorData dataIMU(iter->second, 0, iter->first);
-		odometry_->process(dataIMU);
-		imus_.erase(iter++);
-		imuProcessed_ = true;
-	}
-
 	//NODELET_WARN("img callback: process image %f", stamp.toSec());
 
 	Transform groundTruth;
 	if(!data.imageRaw().empty() || !data.laserScanRaw().isEmpty())
 	{
-		if(previousStamp_>0.0 && previousStamp_ >= header.stamp.toSec())
+		if(previousStamp_>0.0 && previousStamp_ >= stamp.toSec())
 		{
-			NODELET_WARN("Odometry: Detected not valid consecutive stamps (previous=%fs new=%fs). "
-					"New stamp should be always greater than previous stamp. This new data is ignored.",
-					previousStamp_, header.stamp.toSec());
+			NODELET_WARN("Odometry: Detected not valid consecutive stamps (previous=%fs new=%fs). New stamp should be always greater than previous stamp. This new data is ignored. This message will appear only once.",
+					previousStamp_, stamp.toSec());
 			return;
 		}
 		else if(maxUpdateRate_ > 0 &&
 				previousStamp_ > 0 &&
-				(header.stamp.toSec()-previousStamp_+(expectedUpdateRate_ > 0?1.0/expectedUpdateRate_:0)) < 1.0/maxUpdateRate_)
+				(stamp.toSec()-previousStamp_+(expectedUpdateRate_ > 0?1.0/expectedUpdateRate_:0)) < 1.0/maxUpdateRate_)
 		{
 			// throttling
 			return;
@@ -534,24 +577,20 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 		else if(maxUpdateRate_ == 0 &&
 				expectedUpdateRate_ > 0 &&
 			    previousStamp_ > 0 &&
-			    (header.stamp.toSec()-previousStamp_) < 1.0/expectedUpdateRate_)
+			    (stamp.toSec()-previousStamp_) < 1.0/expectedUpdateRate_)
 		{
 			NODELET_WARN("Odometry: Aborting odometry update, higher frame rate detected (%f Hz) than the expected one (%f Hz). (stamps: previous=%fs new=%fs)",
-					1.0/(header.stamp.toSec()-previousStamp_), expectedUpdateRate_, previousStamp_, header.stamp.toSec());
+					1.0/(stamp.toSec()-previousStamp_), expectedUpdateRate_, previousStamp_, stamp.toSec());
 			return;
 		}
 
 		if(!groundTruthFrameId_.empty())
 		{
-			groundTruth = getTransform(groundTruthFrameId_, groundTruthBaseFrameId_, header.stamp);
+			groundTruth = getTransform(groundTruthFrameId_, groundTruthBaseFrameId_, stamp);
 
 			if(!data.imageRaw().empty() || !data.laserScanRaw().isEmpty())
 			{
-				// Use only XYZ to handle the case odometry was previously initialized with IMU,
-				// we assume that the ground truth contains also a real initial orientation
-				float x,y,z;
-				odometry_->getPose().getTranslation(x, y, z);
-				if(x==0.0f && y==0.0f && z==0.0f)
+				if(odometry_->getPose().isIdentity())
 				{
 					// sync with the first value of the ground truth
 					if(groundTruth.isNull())
@@ -577,19 +616,8 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 	Transform guessCurrentPose;
 	if(!guessFrameId_.empty())
 	{
-		guessCurrentPose = this->getTransform(guessFrameId_, frameId_, header.stamp);
-
-		Transform previousPose = guessPreviousPose_;
-		if(guessPreviousPose_.isNull())
-		{
-			previousPose = guessCurrentPose;
-			if(!guessCurrentPose.isNull() && odometry_->getPose().isIdentity())
-			{
-				ROS_INFO("Odometry: init pose with guess %s", guessCurrentPose.prettyPrint().c_str());
-				odometry_->reset(guessCurrentPose);
-			}
-		}
-
+		guessCurrentPose = this->getTransform(guessFrameId_, frameId_, stamp);
+		Transform previousPose = guessPreviousPose_.isNull()?guessCurrentPose:guessPreviousPose_;
 		if(!previousPose.isNull() && !guessCurrentPose.isNull())
 		{
 			if(guess_.isNull())
@@ -606,7 +634,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 				guess_.getTranslationAndEulerAngles(x,y,z,roll,pitch,yaw);
 				if((guessMinTranslation_ <= 0.0 || uMax3(fabs(x), fabs(y), fabs(z)) < guessMinTranslation_) &&
 				   (guessMinRotation_ <= 0.0 || uMax3(fabs(roll), fabs(pitch), fabs(yaw)) < guessMinRotation_) &&
-				   (guessMinTime_ <= 0.0 || (previousStamp_>0.0 && header.stamp.toSec()-previousStamp_ < guessMinTime_)))
+				   (guessMinTime_ <= 0.0 || (previousStamp_>0.0 && stamp.toSec()-previousStamp_ < guessMinTime_)))
 				{
 					// Ignore odometry update, we didn't move enough
 					if(publishTf_)
@@ -614,7 +642,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 						geometry_msgs::TransformStamped correctionMsg;
 						correctionMsg.child_frame_id = guessFrameId_;
 						correctionMsg.header.frame_id = odomFrameId_;
-						correctionMsg.header.stamp = header.stamp;
+						correctionMsg.header.stamp = stamp;
 						Transform correction = odometry_->getPose() * guess_ * guessCurrentPose.inverse();
 						rtabmap_ros::transformToGeometryMsg(correction, correctionMsg.transform);
 						tfBroadcaster_.sendTransform(correctionMsg);
@@ -627,7 +655,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 		}
 		else
 		{
-			NODELET_ERROR("\"guess_frame_id\" is set, but guess cannot be computed between frames \"%s\" -> \"%s\". Aborting odometry update...", guessFrameId_.c_str(), frameId_.c_str());
+			NODELET_ERROR("\"guess_from_tf\" is true, but guess cannot be computed between frames \"%s\" -> \"%s\". Aborting odometry update...", guessFrameId_.c_str(), frameId_.c_str());
 			return;
 		}
 	}
@@ -635,11 +663,12 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 	// process data
 	ros::WallTime time = ros::WallTime::now();
 	rtabmap::OdometryInfo info;
+	SensorData dataCpy = data;
 	if(!groundTruth.isNull())
 	{
-		data.setGroundTruth(groundTruth);
+		dataCpy.setGroundTruth(groundTruth);
 	}
-	rtabmap::Transform pose = odometry_->process(data, guess_, &info);
+	rtabmap::Transform pose = odometry_->process(dataCpy, guess_, &info);
 	if(!pose.isNull())
 	{
 		guess_.setNull();
@@ -651,7 +680,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 		geometry_msgs::TransformStamped poseMsg;
 		poseMsg.child_frame_id = frameId_;
 		poseMsg.header.frame_id = odomFrameId_;
-		poseMsg.header.stamp = header.stamp;
+		poseMsg.header.stamp = stamp;
 		rtabmap_ros::transformToGeometryMsg(pose, poseMsg.transform);
 
 		if(publishTf_)
@@ -662,7 +691,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 				geometry_msgs::TransformStamped correctionMsg;
 				correctionMsg.child_frame_id = guessFrameId_;
 				correctionMsg.header.frame_id = odomFrameId_;
-				correctionMsg.header.stamp = header.stamp;
+				correctionMsg.header.stamp = stamp;
 				Transform correction = pose * guessCurrentPose.inverse();
 				rtabmap_ros::transformToGeometryMsg(correction, correctionMsg.transform);
 				tfBroadcaster_.sendTransform(correctionMsg);
@@ -677,7 +706,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 		{
 			//next, we'll publish the odometry message over ROS
 			nav_msgs::Odometry odom;
-			odom.header.stamp = header.stamp; // use corresponding time stamp to image
+			odom.header.stamp = stamp; // use corresponding time stamp to image
 			odom.header.frame_id = odomFrameId_;
 			odom.child_frame_id = frameId_;
 
@@ -741,7 +770,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 			}
 			sensor_msgs::PointCloud2 cloudMsg;
 			pcl::toROSMsg(cloud, cloudMsg);
-			cloudMsg.header.stamp = header.stamp; // use corresponding time stamp to image
+			cloudMsg.header.stamp = stamp; // use corresponding time stamp to image
 			cloudMsg.header.frame_id = odomFrameId_;
 			odomLocalMap_.publish(cloudMsg);
 		}
@@ -764,7 +793,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 
 					sensor_msgs::PointCloud2 cloudMsg;
 					pcl::toROSMsg(cloud, cloudMsg);
-					cloudMsg.header.stamp = header.stamp; // use corresponding time stamp to image
+					cloudMsg.header.stamp = stamp; // use corresponding time stamp to image
 					cloudMsg.header.frame_id = odomFrameId_;
 					odomLastFrame_.publish(cloudMsg);
 				}
@@ -784,7 +813,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 					}
 					sensor_msgs::PointCloud2 cloudMsg;
 					pcl::toROSMsg(cloud, cloudMsg);
-					cloudMsg.header.stamp = header.stamp; // use corresponding time stamp to image
+					cloudMsg.header.stamp = stamp; // use corresponding time stamp to image
 					cloudMsg.header.frame_id = odomFrameId_;
 					odomLastFrame_.publish(cloudMsg);
 				}
@@ -815,7 +844,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 				pcl::toROSMsg(*cloud, cloudMsg);
 			}
 
-			cloudMsg.header.stamp = header.stamp; // use corresponding time stamp to image
+			cloudMsg.header.stamp = stamp; // use corresponding time stamp to image
 			cloudMsg.header.frame_id = odomFrameId_;
 			odomLocalScanMap_.publish(cloudMsg);
 		}
@@ -824,45 +853,30 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 	{
 		return;
 	}
-	else // pose is null / lost
+	else if(publishNullWhenLost_)
 	{
-		if(publishNullWhenLost_)
-		{
-			//NODELET_WARN( "Odometry lost!");
+		//NODELET_WARN( "Odometry lost!");
 
-			//send null pose to notify that odometry is lost
-			nav_msgs::Odometry odom;
-			odom.header.stamp = header.stamp; // use corresponding time stamp to image
-			odom.header.frame_id = odomFrameId_;
-			odom.child_frame_id = frameId_;
-			odom.pose.covariance.at(0) = BAD_COVARIANCE;  // xx
-			odom.pose.covariance.at(7) = BAD_COVARIANCE;  // yy
-			odom.pose.covariance.at(14) = BAD_COVARIANCE; // zz
-			odom.pose.covariance.at(21) = BAD_COVARIANCE; // rr
-			odom.pose.covariance.at(28) = BAD_COVARIANCE; // pp
-			odom.pose.covariance.at(35) = BAD_COVARIANCE; // yawyaw
-			odom.twist.covariance.at(0) = BAD_COVARIANCE;  // xx
-			odom.twist.covariance.at(7) = BAD_COVARIANCE;  // yy
-			odom.twist.covariance.at(14) = BAD_COVARIANCE; // zz
-			odom.twist.covariance.at(21) = BAD_COVARIANCE; // rr
-			odom.twist.covariance.at(28) = BAD_COVARIANCE; // pp
-			odom.twist.covariance.at(35) = BAD_COVARIANCE; // yawyaw
+		//send null pose to notify that odometry is lost
+		nav_msgs::Odometry odom;
+		odom.header.stamp = stamp; // use corresponding time stamp to image
+		odom.header.frame_id = odomFrameId_;
+		odom.child_frame_id = frameId_;
+		odom.pose.covariance.at(0) = BAD_COVARIANCE;  // xx
+		odom.pose.covariance.at(7) = BAD_COVARIANCE;  // yy
+		odom.pose.covariance.at(14) = BAD_COVARIANCE; // zz
+		odom.pose.covariance.at(21) = BAD_COVARIANCE; // rr
+		odom.pose.covariance.at(28) = BAD_COVARIANCE; // pp
+		odom.pose.covariance.at(35) = BAD_COVARIANCE; // yawyaw
+		odom.twist.covariance.at(0) = BAD_COVARIANCE;  // xx
+		odom.twist.covariance.at(7) = BAD_COVARIANCE;  // yy
+		odom.twist.covariance.at(14) = BAD_COVARIANCE; // zz
+		odom.twist.covariance.at(21) = BAD_COVARIANCE; // rr
+		odom.twist.covariance.at(28) = BAD_COVARIANCE; // pp
+		odom.twist.covariance.at(35) = BAD_COVARIANCE; // yawyaw
 
-			//publish the message
-			odomPub_.publish(odom);
-		}
-
-		// Publish the Tf correction using guess pose directly so that TF tree is not broken when vo is lost
-		if(publishTf_ && !guess_.isNull())
-		{
-			geometry_msgs::TransformStamped correctionMsg;
-			correctionMsg.child_frame_id = guessFrameId_;
-			correctionMsg.header.frame_id = odomFrameId_;
-			correctionMsg.header.stamp = header.stamp;
-			Transform correction = odometry_->getPose() * guess_ * guessCurrentPose.inverse();
-			rtabmap_ros::transformToGeometryMsg(correction, correctionMsg.transform);
-			tfBroadcaster_.sendTransform(correctionMsg);
-		}
+		//publish the message
+		odomPub_.publish(odom);
 	}
 
 	if(pose.isNull() && resetCurrentCount_ > 0)
@@ -872,65 +886,40 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 		--resetCurrentCount_;
 		if(resetCurrentCount_ == 0)
 		{
-			if(!guess_.isNull())
+			// Check TF to see if sensor fusion is used (e.g., the output of robot_localization)
+			Transform tfPose = this->getTransform(odomFrameId_, frameId_, stamp);
+			if(tfPose.isNull())
 			{
-				NODELET_WARN( "Odometry automatically reset based on latest guess available from TF (%s->%s, moved %s since got lost)!",
-						guessFrameId_.c_str(), frameId_.c_str(), guess_.prettyPrint().c_str());
-				odometry_->reset(odometry_->getPose() * guess_);
-				guess_.setNull();
+				NODELET_WARN( "Odometry automatically reset to latest computed pose!");
+				odometry_->reset(odometry_->getPose());
 			}
 			else
 			{
-				// Check TF to see if sensor fusion is used (e.g., the output of robot_localization)
-				Transform tfPose = this->getTransform(odomFrameId_, frameId_, header.stamp);
-				if(tfPose.isNull())
-				{
-					NODELET_WARN( "Odometry automatically reset to latest computed pose!");
-					odometry_->reset(odometry_->getPose());
-				}
-				else
-				{
-					NODELET_WARN( "Odometry automatically reset to latest odometry pose available from TF (%s->%s)!",
-							odomFrameId_.c_str(), frameId_.c_str());
-					odometry_->reset(odometry_->getPose());
-				}
+				NODELET_WARN( "Odometry automatically reset to latest odometry pose available from TF (%s->%s)!",
+						odomFrameId_.c_str(), frameId_.c_str());
+				odometry_->reset(tfPose);
 			}
+
 		}
 	}
 
-	if(odomInfoPub_.getNumSubscribers() || odomInfoLitePub_.getNumSubscribers())
+	if(odomInfoPub_.getNumSubscribers())
 	{
 		rtabmap_ros::OdomInfo infoMsg;
-		odomInfoToROS(info, infoMsg, odomInfoPub_.getNumSubscribers()==0);
-		infoMsg.header.stamp = header.stamp; // use corresponding time stamp to image
+		odomInfoToROS(info, infoMsg);
+		infoMsg.header.stamp = stamp; // use corresponding time stamp to image
 		infoMsg.header.frame_id = odomFrameId_;
-		if(odomInfoPub_.getNumSubscribers()>0) {
-			odomInfoPub_.publish(infoMsg);
-		}
-
-		if(odomInfoLitePub_.getNumSubscribers()>0)
-		{
-			infoMsg.wordInliers.clear();
-			infoMsg.wordMatches.clear();
-			infoMsg.wordsKeys.clear();
-			infoMsg.wordsValues.clear();
-			infoMsg.refCorners.clear();
-			infoMsg.newCorners.clear();
-			infoMsg.cornerInliers.clear();
-			infoMsg.localMapKeys.clear();
-			infoMsg.localMapValues.clear();
-			infoMsg.localScanMap = sensor_msgs::PointCloud2();
-			odomInfoLitePub_.publish(infoMsg);
-		}
+		odomInfoPub_.publish(infoMsg);
 	}
 
 	if(!data.imageRaw().empty() && odomRgbdImagePub_.getNumSubscribers())
 	{
-		if(!header.frame_id.empty())
+		if(!sensorFrameId.empty())
 		{
 			rtabmap_ros::RGBDImage msg;
-			rtabmap_ros::rgbdImageToROS(data, msg, header.frame_id);
-			msg.header = header; // use corresponding time stamp to image
+			rtabmap_ros::rgbdImageToROS(dataCpy, msg, sensorFrameId);
+			msg.header.stamp = stamp; // use corresponding time stamp to image
+			msg.header.frame_id = sensorFrameId;
 			odomRgbdImagePub_.publish(msg);
 		}
 		else
@@ -938,8 +927,6 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 			ROS_WARN("Sensor frame not set, cannot convert SensorData to RGBDImage");
 		}
 	}
-
-	postProcessData(data, header);
 
 	if(!data.imageRaw().empty() || !data.laserScanRaw().isEmpty())
 	{
@@ -958,7 +945,7 @@ void OdometryROS::processData(SensorData & data, const std_msgs::Header & header
 		{
 			NODELET_INFO( "Odom: ratio=%f, std dev=%fm|%frad, update time=%fs", info.reg.icpInliersRatio, pose.isNull()?0.0f:std::sqrt(info.reg.covariance.at<double>(0,0)), pose.isNull()?0.0f:std::sqrt(info.reg.covariance.at<double>(5,5)), (ros::WallTime::now()-time).toSec());
 		}
-		previousStamp_ = header.stamp.toSec();
+		previousStamp_ = stamp.toSec();
 	}
 }
 

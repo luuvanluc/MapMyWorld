@@ -46,7 +46,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <nav_msgs/Odometry.h>
 
 #include <rtabmap_ros/RGBDImage.h>
-#include <rtabmap_ros/RGBDImages.h>
 #include <rtabmap_ros/UserData.h>
 #include <rtabmap_ros/OdomInfo.h>
 #include <rtabmap_ros/ScanDescriptor.h>
@@ -80,13 +79,12 @@ protected:
 			ros::NodeHandle & nh,
 			ros::NodeHandle & pnh,
 			const std::string & name);
-	virtual void commonMultiCameraCallback(
+	virtual void commonDepthCallback(
 				const nav_msgs::OdometryConstPtr & odomMsg,
 				const rtabmap_ros::UserDataConstPtr & userDataMsg,
 				const std::vector<cv_bridge::CvImageConstPtr> & imageMsgs,
 				const std::vector<cv_bridge::CvImageConstPtr> & depthMsgs,
 				const std::vector<sensor_msgs::CameraInfo> & cameraInfoMsgs,
-				const std::vector<sensor_msgs::CameraInfo> & depthCameraInfoMsgs,
 				const sensor_msgs::LaserScan& scanMsg,
 				const sensor_msgs::PointCloud2& scan3dMsg,
 				const rtabmap_ros::OdomInfoConstPtr& odomInfoMsg,
@@ -94,6 +92,20 @@ protected:
 				const std::vector<std::vector<rtabmap_ros::KeyPoint> > & localKeyPoints = std::vector<std::vector<rtabmap_ros::KeyPoint> >(),
 				const std::vector<std::vector<rtabmap_ros::Point3f> > & localPoints3d = std::vector<std::vector<rtabmap_ros::Point3f> >(),
 				const std::vector<cv::Mat> & localDescriptors = std::vector<cv::Mat>()) = 0;
+	virtual void commonStereoCallback(
+				const nav_msgs::OdometryConstPtr & odomMsg,
+				const rtabmap_ros::UserDataConstPtr & userDataMsg,
+				const cv_bridge::CvImageConstPtr& leftImageMsg,
+				const cv_bridge::CvImageConstPtr& rightImageMsg,
+				const sensor_msgs::CameraInfo& leftCamInfoMsg,
+				const sensor_msgs::CameraInfo& rightCamInfoMsg,
+				const sensor_msgs::LaserScan& scanMsg,
+				const sensor_msgs::PointCloud2& scan3dMsg,
+				const rtabmap_ros::OdomInfoConstPtr& odomInfoMsg,
+				const std::vector<rtabmap_ros::GlobalDescriptor> & globalDescriptorMsgs = std::vector<rtabmap_ros::GlobalDescriptor>(),
+				const std::vector<rtabmap_ros::KeyPoint> & localKeyPoints = std::vector<rtabmap_ros::KeyPoint>(),
+				const std::vector<rtabmap_ros::Point3f> & localPoints3d = std::vector<rtabmap_ros::Point3f>(),
+				const cv::Mat & localDescriptors = cv::Mat()) = 0;
 	virtual void commonLaserScanCallback(
 				const nav_msgs::OdometryConstPtr & odomMsg,
 				const rtabmap_ros::UserDataConstPtr & userDataMsg,
@@ -106,7 +118,7 @@ protected:
 				const rtabmap_ros::UserDataConstPtr & userDataMsg,
 				const rtabmap_ros::OdomInfoConstPtr& odomInfoMsg) = 0;
 
-	void commonSingleCameraCallback(
+	void commonSingleDepthCallback(
 				const nav_msgs::OdometryConstPtr & odomMsg,
 				const rtabmap_ros::UserDataConstPtr & userDataMsg,
 				const cv_bridge::CvImageConstPtr & imageMsg,
@@ -154,17 +166,6 @@ private:
 			int queueSize,
 			bool approxSync);
 	void setupRGBDCallbacks(
-			ros::NodeHandle & nh,
-			ros::NodeHandle & pnh,
-			bool subscribeOdom,
-			bool subscribeUserData,
-			bool subscribeScan2d,
-			bool subscribeScan3d,
-			bool subscribeScanDesc,
-			bool subscribeOdomInfo,
-			int queueSize,
-			bool approxSync);
-	void setupRGBDXCallbacks(
 			ros::NodeHandle & nh,
 			ros::NodeHandle & pnh,
 			bool subscribeOdom,
@@ -277,8 +278,6 @@ private:
 	//for rgbd callback
 	ros::Subscriber rgbdSub_;
 	std::vector<message_filters::Subscriber<rtabmap_ros::RGBDImage>*> rgbdSubs_;
-	ros::Subscriber rgbdXSubOnly_;
-	message_filters::Subscriber<rtabmap_ros::RGBDImages> rgbdXSub_;
 
 	//stereo callback
 	image_transport::SubscriberFilter imageRectLeft_;
@@ -418,36 +417,6 @@ private:
 	DATA_SYNCS4(rgbdOdomDataScan3d, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImage, sensor_msgs::PointCloud2);
 	DATA_SYNCS4(rgbdOdomDataScanDesc, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImage, rtabmap_ros::ScanDescriptor);
 	DATA_SYNCS4(rgbdOdomDataInfo, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImage, rtabmap_ros::OdomInfo);
-#endif
-
-	// X RGBD
-	void rgbdXCallback(const rtabmap_ros::RGBDImagesConstPtr&);
-	DATA_SYNCS2(rgbdXScan2d, rtabmap_ros::RGBDImages, sensor_msgs::LaserScan);
-	DATA_SYNCS2(rgbdXScan3d, rtabmap_ros::RGBDImages, sensor_msgs::PointCloud2)
-	DATA_SYNCS2(rgbdXScanDesc, rtabmap_ros::RGBDImages, rtabmap_ros::ScanDescriptor);
-	DATA_SYNCS2(rgbdXInfo, rtabmap_ros::RGBDImages, rtabmap_ros::OdomInfo);
-
-	// X RGBD + Odom
-	DATA_SYNCS2(rgbdXOdom, nav_msgs::Odometry, rtabmap_ros::RGBDImages);
-	DATA_SYNCS3(rgbdXOdomScan2d, nav_msgs::Odometry, rtabmap_ros::RGBDImages, sensor_msgs::LaserScan);
-	DATA_SYNCS3(rgbdXOdomScan3d, nav_msgs::Odometry, rtabmap_ros::RGBDImages, sensor_msgs::PointCloud2);
-	DATA_SYNCS3(rgbdXOdomScanDesc, nav_msgs::Odometry, rtabmap_ros::RGBDImages, rtabmap_ros::ScanDescriptor);
-	DATA_SYNCS3(rgbdXOdomInfo, nav_msgs::Odometry, rtabmap_ros::RGBDImages, rtabmap_ros::OdomInfo);
-
-#ifdef RTABMAP_SYNC_USER_DATA
-	// X RGBD + User Data
-	DATA_SYNCS2(rgbdXData, rtabmap_ros::UserData, rtabmap_ros::RGBDImages);
-	DATA_SYNCS3(rgbdXDataScan2d, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, sensor_msgs::LaserScan);
-	DATA_SYNCS3(rgbdXDataScan3d, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, sensor_msgs::PointCloud2);
-	DATA_SYNCS3(rgbdXDataScanDesc, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, rtabmap_ros::ScanDescriptor);
-	DATA_SYNCS3(rgbdXDataInfo, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, rtabmap_ros::OdomInfo);
-
-	// X RGBD + Odom + User Data
-	DATA_SYNCS3(rgbdXOdomData, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImages);
-	DATA_SYNCS4(rgbdXOdomDataScan2d, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, sensor_msgs::LaserScan);
-	DATA_SYNCS4(rgbdXOdomDataScan3d, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, sensor_msgs::PointCloud2);
-	DATA_SYNCS4(rgbdXOdomDataScanDesc, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, rtabmap_ros::ScanDescriptor);
-	DATA_SYNCS4(rgbdXOdomDataInfo, nav_msgs::Odometry, rtabmap_ros::UserData, rtabmap_ros::RGBDImages, rtabmap_ros::OdomInfo);
 #endif
 
 #ifdef RTABMAP_SYNC_MULTI_RGBD

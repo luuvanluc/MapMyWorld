@@ -69,11 +69,7 @@ MapsManager::MapsManager() :
 		assembledGround_(new pcl::PointCloud<pcl::PointXYZRGB>),
 		occupancyGrid_(new OccupancyGrid),
 		gridUpdated_(true),
-#ifdef WITH_OCTOMAP_MSGS
-#ifdef RTABMAP_OCTOMAP
-		octomap_(new OctoMap),
-#endif
-#endif
+		octomap_(0),
 		octomapTreeDepth_(16),
 		octomapUpdated_(true),
 		latching_(true)
@@ -135,8 +131,9 @@ void MapsManager::init(ros::NodeHandle & nh, ros::NodeHandle & pnh, const std::s
 
 #ifdef WITH_OCTOMAP_MSGS
 #ifdef RTABMAP_OCTOMAP
-    pnh.param("octomap_tree_depth", octomapTreeDepth_, octomapTreeDepth_);
-   	if(octomapTreeDepth_ > 16)
+	octomap_ = new OctoMap(occupancyGrid_->getCellSize(), 0.5, occupancyGrid_->isFullUpdate(), occupancyGrid_->getUpdateError());
+	pnh.param("octomap_tree_depth", octomapTreeDepth_, octomapTreeDepth_);
+	if(octomapTreeDepth_ > 16)
 	{
 		ROS_WARN("octomap_tree_depth maximum is 16");
 		octomapTreeDepth_ = 16;
@@ -553,7 +550,7 @@ std::map<int, rtabmap::Transform> MapsManager::updateMapCaches(
 				rtabmap::SensorData data;
 				if(updateGridCache && (iter->first == 0 || !uContains(gridMaps_, iter->first)))
 				{
-					ROS_DEBUG("Data required for %d", iter->first);
+					UDEBUG("Data required for %d", iter->first);
 					std::map<int, rtabmap::Signature>::const_iterator findIter = signatures.find(iter->first);
 					if(findIter != signatures.end())
 					{
@@ -564,7 +561,7 @@ std::map<int, rtabmap::Transform> MapsManager::updateMapCaches(
 						data = memory->getNodeData(iter->first, occupancyGrid_->isGridFromDepth() && !occupancySavedInDB, !occupancyGrid_->isGridFromDepth() && !occupancySavedInDB, false, true);
 					}
 
-					ROS_DEBUG("Adding grid map %d to cache...", iter->first);
+					UDEBUG("Adding grid map %d to cache...", iter->first);
 					cv::Point3f viewPoint;
 					cv::Mat ground, obstacles, emptyCells;
 					if(iter->first > 0)
@@ -811,7 +808,7 @@ void MapsManager::publishMaps(
 		const ros::Time & stamp,
 		const std::string & mapFrameId)
 {
-	ROS_DEBUG("Publishing maps... poses=%d", (int)poses.size());
+	UDEBUG("Publishing maps...");
 
 	// publish maps
 	if(cloudMapPub_.getNumSubscribers() ||
@@ -824,14 +821,14 @@ void MapsManager::publishMaps(
 
 		if(scanMapPub_.getNumSubscribers())
 		{
-			if(parameters_.find(Parameters::kGridSensor()) != parameters_.end() &&
-				uStr2Int(parameters_.at(Parameters::kGridSensor()))==1)
+			if(parameters_.find(Parameters::kGridFromDepth()) != parameters_.end() &&
+				uStr2Bool(parameters_.at(Parameters::kGridFromDepth())))
 			{
 				ROS_WARN("/scan_map topic is deprecated! Subscribe to /cloud_map topic "
-						"instead with <param name=\"%s\" type=\"string\" value=\"0\"/>. "
+						"instead with <param name=\"%s\" type=\"string\" value=\"false\"/>. "
 						"Do \"$ rosrun rtabmap_ros rtabmap --params | grep Grid\" to see "
 						"all occupancy grid parameters.",
-						Parameters::kGridSensor().c_str());
+						Parameters::kGridFromDepth().c_str());
 			}
 			else
 			{
@@ -850,8 +847,7 @@ void MapsManager::publishMaps(
 				   cloudObstaclesPub_.getNumSubscribers();
 		bool graphGroundChanged = updateGround;
 		bool graphObstacleChanged = updateObstacles;
-		float updateErrorSqr = occupancyGrid_->getUpdateError()*occupancyGrid_->getUpdateError();
-		for(std::map<int, Transform>::const_iterator iter=poses.lower_bound(1); iter!=poses.end(); ++iter)
+		for(std::map<int, Transform>::const_iterator iter=poses.lower_bound(0); iter!=poses.end(); ++iter)
 		{
 			std::map<int, Transform>::const_iterator jter;
 			if(updateGround)
@@ -861,7 +857,7 @@ void MapsManager::publishMaps(
 				{
 					graphGroundChanged = false;
 					UASSERT(!iter->second.isNull() && !jter->second.isNull());
-					if(iter->second.getDistanceSquared(jter->second) > updateErrorSqr)
+					if(iter->second.getDistanceSquared(jter->second) > 0.0001)
 					{
 						graphGroundOptimized = true;
 					}
@@ -874,7 +870,7 @@ void MapsManager::publishMaps(
 				{
 					graphObstacleChanged = false;
 					UASSERT(!iter->second.isNull() && !jter->second.isNull());
-					if(iter->second.getDistanceSquared(jter->second) > updateErrorSqr)
+					if(iter->second.getDistanceSquared(jter->second) > 0.0001)
 					{
 						graphObstacleOptimized = true;
 					}
@@ -908,66 +904,65 @@ void MapsManager::publishMaps(
 			UTimer t;
 			cv::Mat tmpGroundPts;
 			cv::Mat tmpObstaclePts;
-			for(std::map<int, Transform>::const_iterator iter = poses.lower_bound(1); iter!=poses.end(); ++iter)
+			for(std::map<int, Transform>::const_iterator iter = poses.begin(); iter!=poses.end(); ++iter)
 			{
-				if(updateGround  &&
-				   (graphGroundOptimized || assembledGroundPoses_.find(iter->first) == assembledGroundPoses_.end()))
+				if(iter->first > 0)
 				{
-					std::map<int, pcl::PointCloud<pcl::PointXYZRGB>::Ptr >::iterator kter=groundClouds_.find(iter->first);
-					if(kter != groundClouds_.end() && kter->second->size())
+					if(updateGround  &&
+					   (graphGroundOptimized || assembledGroundPoses_.find(iter->first) == assembledGroundPoses_.end()))
 					{
 						assembledGroundPoses_.insert(*iter);
-						pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed = util3d::transformPointCloud(kter->second, iter->second);
-						*assembledGround_+=*transformed;
-						if(cloudSubtractFiltering_)
+						std::map<int, pcl::PointCloud<pcl::PointXYZRGB>::Ptr >::iterator kter=groundClouds_.find(iter->first);
+						if(kter != groundClouds_.end() && kter->second->size())
 						{
-							for(unsigned int i=0; i<transformed->size(); ++i)
+							pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed = util3d::transformPointCloud(kter->second, iter->second);
+							*assembledGround_+=*transformed;
+							if(cloudSubtractFiltering_)
 							{
-								if(tmpGroundPts.empty())
+								for(unsigned int i=0; i<transformed->size(); ++i)
 								{
-									tmpGroundPts = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
-									tmpGroundPts.reserve(previousIndexedGroundSize>0?previousIndexedGroundSize:100);
-								}
-								else
-								{
-									cv::Mat pt = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
-									tmpGroundPts.push_back(pt);
+									if(tmpGroundPts.empty())
+									{
+										tmpGroundPts = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
+										tmpGroundPts.reserve(previousIndexedGroundSize>0?previousIndexedGroundSize:100);
+									}
+									else
+									{
+										cv::Mat pt = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
+										tmpGroundPts.push_back(pt);
+									}
 								}
 							}
+							++countGrounds;
 						}
-						++countGrounds;
 					}
-				}
-				if(updateObstacles  &&
-				   (graphObstacleOptimized || assembledObstaclePoses_.find(iter->first) == assembledObstaclePoses_.end()))
-				{
-					std::map<int, pcl::PointCloud<pcl::PointXYZRGB>::Ptr >::iterator kter=obstacleClouds_.find(iter->first);
-					if(kter != obstacleClouds_.end() && kter->second->size())
+					if(updateObstacles  &&
+					   (graphObstacleOptimized || assembledObstaclePoses_.find(iter->first) == assembledObstaclePoses_.end()))
 					{
 						assembledObstaclePoses_.insert(*iter);
-						pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed = util3d::transformPointCloud(kter->second, iter->second);
-						*assembledObstacles_+=*transformed;
-						if(cloudSubtractFiltering_)
+						std::map<int, pcl::PointCloud<pcl::PointXYZRGB>::Ptr >::iterator kter=obstacleClouds_.find(iter->first);
+						if(kter != obstacleClouds_.end() && kter->second->size())
 						{
-							for(unsigned int i=0; i<transformed->size(); ++i)
+							pcl::PointCloud<pcl::PointXYZRGB>::Ptr transformed = util3d::transformPointCloud(kter->second, iter->second);
+							*assembledObstacles_+=*transformed;
+							if(cloudSubtractFiltering_)
 							{
-								if(tmpObstaclePts.empty())
+								for(unsigned int i=0; i<transformed->size(); ++i)
 								{
-									tmpObstaclePts = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
-									tmpObstaclePts.reserve(previousIndexedObstacleSize>0?previousIndexedObstacleSize:100);
-								}
-								else
-								{
-									cv::Mat pt = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
-									tmpObstaclePts.push_back(pt);
+									if(tmpObstaclePts.empty())
+									{
+										tmpObstaclePts = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
+										tmpObstaclePts.reserve(previousIndexedObstacleSize>0?previousIndexedObstacleSize:100);
+									}
+									else
+									{
+										cv::Mat pt = (cv::Mat_<float>(1, 3) << transformed->at(i).x, transformed->at(i).y, transformed->at(i).z);
+										tmpObstaclePts.push_back(pt);
+									}
 								}
 							}
+							++countObstacles;
 						}
-						++countObstacles;
-					}
-					else
-					{
-						std::map<int, std::pair<std::pair<cv::Mat, cv::Mat>, cv::Mat> >::iterator jter = gridMaps_.find(iter->first);
 					}
 				}
 			}
@@ -982,11 +977,11 @@ void MapsManager::publishMaps(
 				assembledObstacleIndex_.buildKDTreeSingleIndex(tmpObstaclePts, 15);
 			}
 			double indexingTime = t.ticks();
-			ROS_INFO("Graph optimized! Time recreating clouds (%d ground, %d obstacles) = %f s (indexing %fs)", countGrounds, countObstacles, addingPointsTime+indexingTime, indexingTime);
+			UINFO("Graph optimized! Time recreating clouds (%d ground, %d obstacles) = %f s (indexing %fs)", countGrounds, countObstacles, addingPointsTime+indexingTime, indexingTime);
 		}
 		else if(graphGroundChanged || graphObstacleChanged)
 		{
-			ROS_WARN("Graph has changed! The whole cloud is regenerated.");
+			UWARN("Graph has changed! The whole cloud is regenerated.");
 		}
 
 		for(std::map<int, Transform>::const_iterator iter = poses.begin(); iter!=poses.end(); ++iter)
@@ -1242,7 +1237,7 @@ void MapsManager::publishMaps(
 			pcl::IndicesPtr frontierIndices(new std::vector<int>);
 			pcl::IndicesPtr emptyIndices(new std::vector<int>);
 			pcl::IndicesPtr groundIndices(new std::vector<int>);
-			pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud = octomap_->createCloud(octomapTreeDepth_, obstacleIndices.get(), emptyIndices.get(), groundIndices.get(), true, frontierIndices.get(),0);
+			pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud = octomap_->createCloud(octomapTreeDepth_, obstacleIndices.get(), emptyIndices.get(), groundIndices.get(), true, frontierIndices.get());
 
 			if(octoMapCloud_.getNumSubscribers())
 			{
@@ -1332,10 +1327,10 @@ void MapsManager::publishMaps(
 			else if(poses.size())
 			{
 				ROS_WARN("Octomap projection map is empty! (poses=%d octomap nodes=%d). "
-						"Make sure you enabled \"%s\" and set \"%s\"=1. "
+						"Make sure you activated \"%s\" and \"%s\" to true. "
 						"See \"$ rosrun rtabmap_ros rtabmap --params | grep Grid\" for more info.",
 						(int)poses.size(), (int)octomap_->octree()->size(),
-						Parameters::kGrid3D().c_str(), Parameters::kGridSensor().c_str());
+						Parameters::kGrid3D().c_str(), Parameters::kGridFromDepth().c_str());
 			}
 		}
 	}
@@ -1403,14 +1398,14 @@ void MapsManager::publishMaps(
 	{
 		if(projMapPub_.getNumSubscribers())
 		{
-			if(parameters_.find(Parameters::kGridSensor()) != parameters_.end() &&
-				uStr2Int(parameters_.at(Parameters::kGridSensor()))==0)
+			if(parameters_.find(Parameters::kGridFromDepth()) != parameters_.end() &&
+				!uStr2Bool(parameters_.at(Parameters::kGridFromDepth())))
 			{
 				ROS_WARN("/proj_map topic is deprecated! Subscribe to /grid_map topic "
-						"instead with <param name=\"%s\" type=\"string\" value=\"1\"/>. "
+						"instead with <param name=\"%s\" type=\"string\" value=\"true\"/>. "
 						"Do \"$ rosrun rtabmap_ros rtabmap --params | grep Grid\" to see "
 						"all occupancy grid parameters.",
-						Parameters::kGridSensor().c_str());
+						Parameters::kGridFromDepth().c_str());
 			}
 			else
 			{

@@ -29,7 +29,7 @@ float32[] cx
 float32[] cy
 float32[] width
 float32[] height
-float32[] baseline
+float32 baseline
 # local transform (/base_link -> /camera_link)
 geometry_msgs/Transform[] localTransform
 
@@ -54,11 +54,9 @@ uint8[] grid_empty_cells
 float32 grid_cell_size
 Point3f grid_view_point
 
-# std::multimap<wordId, index>
-# std::vector<cv::Keypoint>
-# std::vector<cv::Point3f>
-int32[] wordIdKeys
-int32[] wordIdValues
+# std::multimap<wordId, cv::Keypoint>
+# std::multimap<wordId, cv::Point3f>
+int32[] wordIds
 KeyPoint[] wordKpts
 Point3f[] wordPts
 # compressed descriptors

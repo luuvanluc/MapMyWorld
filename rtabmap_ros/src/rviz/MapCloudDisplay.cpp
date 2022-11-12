@@ -57,7 +57,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <rtabmap/core/Graph.h>
 #include <rtabmap_ros/MsgConversion.h>
 #include <rtabmap_ros/GetMap.h>
-#include <std_msgs/Int32MultiArray.h>
 
 
 namespace rtabmap_ros
@@ -91,8 +90,7 @@ MapCloudDisplay::MapCloudDisplay()
     new_xyz_transformer_(false),
     new_color_transformer_(false),
     needs_retransform_(false),
-    transformer_class_loader_(NULL),
-	current_map_updated_(false)
+    transformer_class_loader_(NULL)
 {
 	//QIcon icon;
 	//this->setIcon(icon);
@@ -137,7 +135,6 @@ MapCloudDisplay::MapCloudDisplay()
 	cloud_from_scan_ = new rviz::BoolProperty( "Cloud from scan", false,
 										 "Create the cloud from laser scans instead of the RGB-D/Stereo images.",
 										 this, SLOT( updateCloudParameters() ), this );
-	fromScan_ = cloud_from_scan_->getBool();
 
 	cloud_decimation_ = new rviz::IntProperty( "Cloud decimation", 4,
 										 "Decimation of the input RGB and depth images before creating the cloud.",
@@ -167,14 +164,14 @@ MapCloudDisplay::MapCloudDisplay()
 										 "Filter the floor up to maximum height set here "
 										 "(only appropriate for 2D mapping).",
 										 this, SLOT( updateCloudParameters() ), this );
-	cloud_filter_floor_height_->setMin( -999.0f );
+	cloud_filter_floor_height_->setMin( 0.0f );
 	cloud_filter_floor_height_->setMax( 999.0f );
 
 	cloud_filter_ceiling_height_ = new rviz::FloatProperty( "Filter ceiling (m)", 0.0f,
 										 "Filter the ceiling at the specified height set here "
 										 "(only appropriate for 2D mapping).",
 										 this, SLOT( updateCloudParameters() ), this );
-	cloud_filter_ceiling_height_->setMin( -999.0f );
+	cloud_filter_ceiling_height_->setMin( 0.0f );
 	cloud_filter_ceiling_height_->setMax( 999.0f );
 
 	node_filtering_radius_ = new rviz::FloatProperty( "Node filtering radius (m)", 0.0f,
@@ -189,8 +186,6 @@ MapCloudDisplay::MapCloudDisplay()
 	node_filtering_angle_->setMin( 0.0f );
 	node_filtering_angle_->setMax( 359.0f );
 
-	download_namespace = new rviz::StringProperty("Download namespace", "rtabmap", "Namespace used to call Download services below", this, SLOT( downloadNamespaceChanged() ), this);
-
 	download_map_ = new rviz::BoolProperty( "Download map", false,
 										 "Download the optimized global map using rtabmap/GetMap service. This will force to re-create all clouds.",
 										 this, SLOT( downloadMap() ), this );
@@ -198,8 +193,6 @@ MapCloudDisplay::MapCloudDisplay()
 	download_graph_ = new rviz::BoolProperty( "Download graph", false,
 											 "Download the optimized global graph (without cloud data) using rtabmap/GetMap service.",
 											 this, SLOT( downloadGraph() ), this );
-
-	downloadNamespaceChanged();
 
 	// PointCloudCommon sets up a callback queue with a thread for each
 	// instance.  Use that for processing incoming messages.
@@ -282,7 +275,6 @@ void MapCloudDisplay::processMapData(const rtabmap_ros::MapData& map)
 
 	// Add new clouds...
 	bool fromDepth = !cloud_from_scan_->getBool();
-	std::set<int> nodeDataReceived;
 	for(unsigned int i=0; i<map.nodes.size() && i<map.nodes.size(); ++i)
 	{
 		int id = map.nodes[i].id;
@@ -292,7 +284,7 @@ void MapCloudDisplay::processMapData(const rtabmap_ros::MapData& map)
 		if((fromDepth &&
 			!s.sensorData().imageCompressed().empty() &&
 		    !s.sensorData().depthOrRightCompressed().empty() &&
-		    (s.sensorData().cameraModels().size() || s.sensorData().stereoCameraModels().size())) ||
+		    (s.sensorData().cameraModels().size() || s.sensorData().stereoCameraModel().isValidForProjection())) ||
 		   (!fromDepth && !s.sensorData().laserScanCompressed().isEmpty()))
 		{
 			cv::Mat image, depth;
@@ -320,13 +312,13 @@ void MapCloudDisplay::processMapData(const rtabmap_ros::MapData& map)
 						cloud = rtabmap::util3d::voxelize(cloud, validIndices, cloud_voxel_size_->getFloat());
 					}
 
-					if(cloud_filter_floor_height_->getFloat() != 0.0f || cloud_filter_ceiling_height_->getFloat() != 0.0f)
+					if(cloud_filter_floor_height_->getFloat() > 0.0f || cloud_filter_ceiling_height_->getFloat() > 0.0f)
 					{
 						// convert in /odom frame
 						cloud = rtabmap::util3d::transformPointCloud(cloud, s.getPose());
 						cloud = rtabmap::util3d::passThrough(cloud, "z",
-								cloud_filter_floor_height_->getFloat()!=0.0f?cloud_filter_floor_height_->getFloat():-999.0f,
-								cloud_filter_ceiling_height_->getFloat()!=0.0f && (cloud_filter_floor_height_->getFloat()==0.0f || cloud_filter_ceiling_height_->getFloat()>cloud_filter_floor_height_->getFloat())?cloud_filter_ceiling_height_->getFloat():999.0f);
+								cloud_filter_floor_height_->getFloat()>0.0f?cloud_filter_floor_height_->getFloat():-999.0f,
+								cloud_filter_ceiling_height_->getFloat()>0.0f && (cloud_filter_floor_height_->getFloat()<=0.0f || cloud_filter_ceiling_height_->getFloat()>cloud_filter_floor_height_->getFloat())?cloud_filter_ceiling_height_->getFloat():999.0f);
 						// convert back in /base_link frame
 						cloud = rtabmap::util3d::transformPointCloud(cloud, s.getPose().inverse());
 					}
@@ -380,7 +372,6 @@ void MapCloudDisplay::processMapData(const rtabmap_ros::MapData& map)
 				}
 			}
 		}
-		nodeDataReceived.insert(id);
 	}
 
 	// Update graph
@@ -394,8 +385,6 @@ void MapCloudDisplay::processMapData(const rtabmap_ros::MapData& map)
 	{
 		boost::mutex::scoped_lock lock(current_map_mutex_);
 		current_map_ = poses;
-		current_map_updated_ = true;
-		nodeDataReceived_.insert(nodeDataReceived.begin(), nodeDataReceived.end());
 	}
 }
 
@@ -535,81 +524,53 @@ void MapCloudDisplay::updateBillboardSize()
 
 void MapCloudDisplay::updateCloudParameters()
 {
-	// do nothing for most parameters... only take effect on next generated clouds
-
-	// if we change the kind of map, clear
-	if(fromScan_ != cloud_from_scan_->getBool())
-	{
-		reset();
-	}
-	fromScan_ = cloud_from_scan_->getBool();
-}
-
-void MapCloudDisplay::downloadMap(bool graphOnly)
-{
-	rtabmap_ros::GetMap getMapSrv;
-	getMapSrv.request.global = false;
-	getMapSrv.request.optimized = true;
-	getMapSrv.request.graphOnly = graphOnly;
-	std::string rtabmapNs = download_namespace->getStdString();
-	std::string srvName = update_nh_.resolveName(uFormat("%s/get_map_data", rtabmapNs.c_str()));
-	QMessageBox * messageBox = new QMessageBox(
-			QMessageBox::NoIcon,
-			tr("Calling \"%1\" service...").arg(srvName.c_str()),
-			tr("Downloading the map... please wait (rviz could become gray!)"),
-			QMessageBox::NoButton);
-	messageBox->setAttribute(Qt::WA_DeleteOnClose, true);
-	messageBox->show();
-	QApplication::processEvents();
-	uSleep(100); // hack make sure the text in the QMessageBox is shown...
-	QApplication::processEvents();
-	if(!ros::service::call(srvName, getMapSrv))
-	{
-		ROS_ERROR("MapCloudDisplay: Cannot call \"%s\" service. "
-				  "Tip: if rtabmap node is not in \"%s\" namespace, you can "
-				  "change the \"Download namespace\" option.",
-				  srvName.c_str(),
-				  rtabmapNs.c_str());
-		messageBox->setText(tr("MapCloudDisplay: Cannot call \"%1\" service. "
-				  "Tip: if rtabmap node is not in \"%2\" namespace, you can "
-				  "change the \"Download namespace\" option.").
-				  arg(srvName.c_str()).arg(rtabmapNs.c_str()));
-	}
-	else if(graphOnly)
-	{
-		messageBox->setText(tr("Updating the map (%1 nodes downloaded)...").arg(getMapSrv.response.data.graph.poses.size()));
-		QApplication::processEvents();
-		processMapData(getMapSrv.response.data);
-		messageBox->setText(tr("Updating the map (%1 nodes downloaded)... done!").arg(getMapSrv.response.data.graph.poses.size()));
-
-		QTimer::singleShot(1000, messageBox, SLOT(close()));
-	}
-	else
-	{
-		messageBox->setText(tr("Creating all clouds (%1 poses and %2 clouds downloaded)...")
-				.arg(getMapSrv.response.data.graph.poses.size()).arg(getMapSrv.response.data.nodes.size()));
-		QApplication::processEvents();
-		this->reset();
-		processMapData(getMapSrv.response.data);
-		messageBox->setText(tr("Creating all clouds (%1 poses and %2 clouds downloaded)... done!")
-				.arg(getMapSrv.response.data.graph.poses.size()).arg(getMapSrv.response.data.nodes.size()));
-
-		QTimer::singleShot(1000, messageBox, SLOT(close()));
-	}
-}
-
-void MapCloudDisplay::downloadNamespaceChanged()
-{
-	std::string rtabmapNs = download_namespace->getStdString();
-	std::string topicName = update_nh_.resolveName(uFormat("%s/republish_node_data", rtabmapNs.c_str()));
-	republishNodeDataPub_ = update_nh_.advertise<std_msgs::Int32MultiArray>(topicName, 1);
+	// do nothing... only take effect on next generated clouds
 }
 
 void MapCloudDisplay::downloadMap()
 {
 	if(download_map_->getBool())
 	{
-		downloadMap(false);
+		rtabmap_ros::GetMap getMapSrv;
+		getMapSrv.request.global = true;
+		getMapSrv.request.optimized = true;
+		getMapSrv.request.graphOnly = false;
+		ros::NodeHandle nh;
+		QMessageBox * messageBox = new QMessageBox(
+				QMessageBox::NoIcon,
+				tr("Calling \"%1\" service...").arg(nh.resolveName("rtabmap/get_map_data").c_str()),
+				tr("Downloading the map... please wait (rviz could become gray!)"),
+				QMessageBox::NoButton);
+		messageBox->setAttribute(Qt::WA_DeleteOnClose, true);
+		messageBox->show();
+		QApplication::processEvents();
+		uSleep(100); // hack make sure the text in the QMessageBox is shown...
+		QApplication::processEvents();
+		if(!ros::service::call("rtabmap/get_map_data", getMapSrv))
+		{
+			ROS_ERROR("MapCloudDisplay: Can't call \"%s\" service. "
+					  "Tip: if rtabmap node is not in rtabmap namespace, you can remap the service "
+					  "to \"get_map_data\" in the launch "
+					  "file like: <remap from=\"rtabmap/get_map_data\" to=\"get_map_data\"/>.",
+					  nh.resolveName("rtabmap/get_map_data").c_str());
+			messageBox->setText(tr("MapCloudDisplay: Can't call \"%1\" service. "
+					  "Tip: if rtabmap node is not in rtabmap namespace, you can remap the service "
+					  "to \"get_map_data\" in the launch "
+					  "file like: <remap from=\"rtabmap/get_map_data\" to=\"get_map_data\"/>.").
+					  arg(nh.resolveName("rtabmap/get_map_data").c_str()));
+		}
+		else
+		{
+			messageBox->setText(tr("Creating all clouds (%1 poses and %2 clouds downloaded)...")
+					.arg(getMapSrv.response.data.graph.poses.size()).arg(getMapSrv.response.data.nodes.size()));
+			QApplication::processEvents();
+			this->reset();
+			processMapData(getMapSrv.response.data);
+			messageBox->setText(tr("Creating all clouds (%1 poses and %2 clouds downloaded)... done!")
+					.arg(getMapSrv.response.data.graph.poses.size()).arg(getMapSrv.response.data.nodes.size()));
+
+			QTimer::singleShot(1000, messageBox, SLOT(close()));
+		}
 		download_map_->blockSignals(true);
 		download_map_->setBool(false);
 		download_map_->blockSignals(false);
@@ -628,7 +589,43 @@ void MapCloudDisplay::downloadGraph()
 {
 	if(download_graph_->getBool())
 	{
-		downloadMap(true);
+		rtabmap_ros::GetMap getMapSrv;
+		getMapSrv.request.global = true;
+		getMapSrv.request.optimized = true;
+		getMapSrv.request.graphOnly = true;
+		ros::NodeHandle nh;
+		QMessageBox * messageBox = new QMessageBox(
+				QMessageBox::NoIcon,
+				tr("Calling \"%1\" service...").arg(nh.resolveName("rtabmap/get_map_data").c_str()),
+				tr("Downloading the graph... please wait (rviz could become gray!)"),
+				QMessageBox::NoButton);
+		messageBox->setAttribute(Qt::WA_DeleteOnClose, true);
+		messageBox->show();
+		QApplication::processEvents();
+		uSleep(100); // hack make sure the text in the QMessageBox is shown...
+		QApplication::processEvents();
+		if(!ros::service::call("rtabmap/get_map_data", getMapSrv))
+		{
+			ROS_ERROR("MapCloudDisplay: Can't call \"%s\" service. "
+					  "Tip: if rtabmap node is not in rtabmap namespace, you can remap the service "
+					  "to \"get_map_data\" in the launch "
+					  "file like: <remap from=\"rtabmap/get_map_data\" to=\"get_map_data\"/>.",
+					  nh.resolveName("rtabmap/get_map_data").c_str());
+			messageBox->setText(tr("MapCloudDisplay: Can't call \"%1\" service. "
+					  "Tip: if rtabmap node is not in rtabmap namespace, you can remap the service "
+					  "to \"get_map_data\" in the launch "
+					  "file like: <remap from=\"rtabmap/get_map_data\" to=\"get_map_data\"/>.").
+					  arg(nh.resolveName("rtabmap/get_map_data").c_str()));
+		}
+		else
+		{
+			messageBox->setText(tr("Updating the map (%1 nodes downloaded)...").arg(getMapSrv.response.data.graph.poses.size()));
+			QApplication::processEvents();
+			processMapData(getMapSrv.response.data);
+			messageBox->setText(tr("Updating the map (%1 nodes downloaded)... done!").arg(getMapSrv.response.data.graph.poses.size()));
+
+			QTimer::singleShot(1000, messageBox, SLOT(close()));
+		}
 		download_graph_->blockSignals(true);
 		download_graph_->setBool(false);
 		download_graph_->blockSignals(false);
@@ -731,7 +728,6 @@ void MapCloudDisplay::update( float wall_dt, float ros_dt )
 		boost::mutex::scoped_lock lock(current_map_mutex_);
 		if(!current_map_.empty())
 		{
-			std::vector<int> missingNodes;
 			for (std::map<int, rtabmap::Transform>::iterator it=current_map_.begin(); it != current_map_.end(); ++it)
 			{
 				std::map<int, CloudInfoPtr>::iterator cloudInfoIt = cloud_infos_.find(it->first);
@@ -741,7 +737,6 @@ void MapCloudDisplay::update( float wall_dt, float ros_dt )
 					cloudInfoIt->second->pose_ = it->second;
 					Ogre::Vector3 framePosition;
 					Ogre::Quaternion frameOrientation;
-					std::string error;
 					if (context_->getFrameManager()->getTransform(cloudInfoIt->second->message_->header, framePosition, frameOrientation))
 					{
 						// Multiply frame with pose
@@ -762,18 +757,11 @@ void MapCloudDisplay::update( float wall_dt, float ros_dt )
 						cloudInfoIt->second->scene_node_->setVisible(true);
 						++totalNodesShown;
 					}
-					else if(context_->getFrameManager()->frameHasProblems(cloudInfoIt->second->message_->header.frame_id, cloudInfoIt->second->message_->header.stamp, error))
+					else
 					{
-						ROS_ERROR("MapCloudDisplay: Could not update pose of node %d (cannot transform pose in target frame id \"%s\" (reason=%s), set fixed frame in global options to \"%s\")",
-								it->first,
-								cloudInfoIt->second->message_->header.frame_id.c_str(),
-								error.c_str(),
-								cloudInfoIt->second->message_->header.frame_id.c_str());
+						ROS_ERROR("MapCloudDisplay: Could not update pose of node %d", it->first);
 					}
-				}
-				else if(it->first>0 && current_map_updated_&& nodeDataReceived_.find(it->first) == nodeDataReceived_.end())
-				{
-					missingNodes.push_back(it->first);
+
 				}
 			}
 			//hide not used clouds
@@ -798,15 +786,7 @@ void MapCloudDisplay::update( float wall_dt, float ros_dt )
 					++iter;
 				}
 			}
-
-			if(!missingNodes.empty())
-			{
-				std_msgs::Int32MultiArray msg;
-				msg.data = missingNodes;
-				republishNodeDataPub_.publish(msg);
-			}
 		}
-		current_map_updated_ = false;
 	}
 	if(lastCloudAdded>0)
 	{
@@ -828,8 +808,6 @@ void MapCloudDisplay::reset()
 	{
 		boost::mutex::scoped_lock lock(current_map_mutex_);
 		current_map_.clear();
-		current_map_updated_ = false;
-		nodeDataReceived_.clear();
 	}
 	MFDClass::reset();
 }

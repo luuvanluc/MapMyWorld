@@ -28,7 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <rtabmap_ros/OdometryROS.h>
 
 #include <pluginlib/class_list_macros.h>
-#include <pluginlib/class_loader.h>
+#include <pluginlib/class_loader.hpp>
 
 #include <nodelet/nodelet.h>
 
@@ -37,7 +37,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sensor_msgs/LaserScan.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl_ros/transforms.h>
 
 #include "rtabmap_ros/MsgConversion.h"
 #include "rtabmap_ros/PluginInterface.h"
@@ -69,8 +68,6 @@ public:
 		scanNormalK_(0),
 		scanNormalRadius_(0.0),
 		scanNormalGroundUp_(0.0),
-		deskewing_(false),
-		deskewingSlerp_(false),
 		plugin_loader_("rtabmap_ros", "rtabmap_ros::PluginInterface"),
 		scanReceived_(false),
 		cloudReceived_(false)
@@ -89,8 +86,6 @@ private:
 		ros::NodeHandle & nh = getNodeHandle();
 		ros::NodeHandle & pnh = getPrivateNodeHandle();
 
-		int queueSize = 1;
-		pnh.param("queue_size",  queueSize, queueSize);
 		pnh.param("scan_cloud_max_points",  scanCloudMaxPoints_, scanCloudMaxPoints_);
 		pnh.param("scan_downsampling_step", scanDownsamplingStep_, scanDownsamplingStep_);
 		pnh.param("scan_range_min",  scanRangeMin_, scanRangeMin_);
@@ -99,8 +94,6 @@ private:
 		pnh.param("scan_normal_k",   scanNormalK_, scanNormalK_);
 		pnh.param("scan_normal_radius", scanNormalRadius_, scanNormalRadius_);
 		pnh.param("scan_normal_ground_up", scanNormalGroundUp_, scanNormalGroundUp_);
-		pnh.param("deskewing",  deskewing_, deskewing_);
-		pnh.param("deskewing_slerp",  deskewingSlerp_, deskewingSlerp_);
 
 		if (pnh.hasParam("plugins"))
 		{
@@ -138,7 +131,6 @@ private:
 			pnh.param("scan_cloud_normal_k", scanNormalK_, scanNormalK_);
 		}
 
-		NODELET_INFO("IcpOdometry: queue_size             = %d", queueSize);
 		NODELET_INFO("IcpOdometry: scan_cloud_max_points  = %d", scanCloudMaxPoints_);
 		NODELET_INFO("IcpOdometry: scan_downsampling_step = %d", scanDownsamplingStep_);
 		NODELET_INFO("IcpOdometry: scan_range_min         = %f m", scanRangeMin_);
@@ -147,11 +139,9 @@ private:
 		NODELET_INFO("IcpOdometry: scan_normal_k          = %d", scanNormalK_);
 		NODELET_INFO("IcpOdometry: scan_normal_radius     = %f m", scanNormalRadius_);
 		NODELET_INFO("IcpOdometry: scan_normal_ground_up  = %f", scanNormalGroundUp_);
-		NODELET_INFO("IcpOdometry: deskewing              = %s", deskewing_?"true":"false");
-		NODELET_INFO("IcpOdometry: deskewing_slerp        = %s", deskewingSlerp_?"true":"false");
 
-		scan_sub_ = nh.subscribe("scan", queueSize, &ICPOdometry::callbackScan, this);
-		cloud_sub_ = nh.subscribe("scan_cloud", queueSize, &ICPOdometry::callbackCloud, this);
+		scan_sub_ = nh.subscribe("scan", 1, &ICPOdometry::callbackScan, this);
+		cloud_sub_ = nh.subscribe("scan_cloud", 1, &ICPOdometry::callbackCloud, this);
 
 		filtered_scan_pub_ = nh.advertise<sensor_msgs::PointCloud2>("odom_filtered_input_scan", 1);
 	}
@@ -188,8 +178,8 @@ private:
 		iter = parameters.find(Parameters::kIcpRangeMin());
 		if(iter != parameters.end())
 		{
-			float value = uStr2Float(iter->second);
-			if(value != 0.0f)
+			int value = uStr2Int(iter->second);
+			if(value > 1)
 			{
 				if(!pnh.hasParam("scan_range_min"))
 				{
@@ -206,8 +196,8 @@ private:
 		iter = parameters.find(Parameters::kIcpRangeMax());
 		if(iter != parameters.end())
 		{
-			float value = uStr2Float(iter->second);
-			if(value != 0.0f)
+			int value = uStr2Int(iter->second);
+			if(value > 1)
 			{
 				if(!pnh.hasParam("scan_range_max"))
 				{
@@ -239,11 +229,6 @@ private:
 				}
 			}
 		}
-		else if(pnh.hasParam("scan_voxel_size"))
-		{
-			NODELET_INFO("IcpOdometry: scan_voxel_size is set (%f), setting %s to 0", scanVoxelSize_, Parameters::kIcpVoxelSize().c_str());
-			parameters.insert(ParametersPair(Parameters::kIcpVoxelSize(), "0"));
-		}
 		iter = parameters.find(Parameters::kIcpPointToPlaneK());
 		if(iter != parameters.end())
 		{
@@ -255,17 +240,7 @@ private:
 					ROS_WARN("IcpOdometry: Transferring value %s of \"%s\" to ros parameter \"scan_normal_k\" for convenience.", iter->second.c_str(), iter->first.c_str());
 					scanNormalK_ = value;
 				}
-				else
-				{
-					NODELET_INFO("IcpOdometry: scan_normal_k is set (%d), setting %s to same value.", scanNormalK_, Parameters::kIcpPointToPlaneK().c_str());
-					iter->second = uNumber2Str(scanNormalK_);
-				}
 			}
-		}
-		else if(pnh.hasParam("scan_normal_k"))
-		{
-			NODELET_INFO("IcpOdometry: scan_normal_k is set (%d), setting %s to same value.", scanNormalK_, Parameters::kIcpPointToPlaneK().c_str());
-			parameters.insert(ParametersPair(Parameters::kIcpPointToPlaneK(), uNumber2Str(scanNormalK_)));
 		}
 		iter = parameters.find(Parameters::kIcpPointToPlaneRadius());
 		if(iter != parameters.end())
@@ -278,17 +253,7 @@ private:
 					ROS_WARN("IcpOdometry: Transferring value %s of \"%s\" to ros parameter \"scan_normal_radius\" for convenience.", iter->second.c_str(), iter->first.c_str());
 					scanNormalRadius_ = value;
 				}
-				else
-				{
-					NODELET_INFO("IcpOdometry: scan_normal_radius is set (%f), setting %s to same value.", scanNormalRadius_, Parameters::kIcpPointToPlaneRadius().c_str());
-					iter->second = uNumber2Str(scanNormalK_);
-				}
 			}
-		}
-		else if(pnh.hasParam("scan_normal_radius"))
-		{
-			NODELET_INFO("IcpOdometry: scan_normal_radius is set (%f), setting %s to same value.", scanNormalRadius_, Parameters::kIcpPointToPlaneRadius().c_str());
-			parameters.insert(ParametersPair(Parameters::kIcpPointToPlaneRadius(), uNumber2Str(scanNormalRadius_)));
 		}
 		iter = parameters.find(Parameters::kIcpPointToPlaneGroundNormalsUp());
 		if(iter != parameters.end())
@@ -301,17 +266,7 @@ private:
 					ROS_WARN("IcpOdometry: Transferring value %s of \"%s\" to ros parameter \"scan_normal_ground_up\" for convenience.", iter->second.c_str(), iter->first.c_str());
 					scanNormalGroundUp_ = value;
 				}
-				else
-				{
-					NODELET_INFO("IcpOdometry: scan_normal_ground_up is set (%f), setting %s to same value.", scanNormalGroundUp_, Parameters::kIcpPointToPlaneGroundNormalsUp().c_str());
-					iter->second = uNumber2Str(scanNormalK_);
-				}
 			}
-		}
-		else if(pnh.hasParam("scan_normal_ground_up"))
-		{
-			NODELET_INFO("IcpOdometry: scan_normal_ground_up is set (%f), setting %s to same value.", scanNormalGroundUp_, Parameters::kIcpPointToPlaneGroundNormalsUp().c_str());
-			parameters.insert(ParametersPair(Parameters::kIcpPointToPlaneGroundNormalsUp(), uNumber2Str(scanNormalGroundUp_)));
 		}
 	}
 
@@ -335,7 +290,7 @@ private:
 		// make sure the frame of the laser is updated too
 		Transform localScanTransform = getTransform(this->frameId(),
 				scanMsg->header.frame_id,
-				scanMsg->header.stamp);
+				scanMsg->header.stamp + ros::Duration().fromSec(scanMsg->ranges.size()*scanMsg->time_increment));
 		if(localScanTransform.isNull())
 		{
 			ROS_ERROR("TF of received laser scan topic at time %fs is not set, aborting odometry update.", scanMsg->header.stamp.toSec());
@@ -345,35 +300,7 @@ private:
 		//transform in frameId_ frame
 		sensor_msgs::PointCloud2 scanOut;
 		laser_geometry::LaserProjection projection;
-
-		if(deskewing_ && !guessFrameId().empty())
-		{
-			projection.transformLaserScanToPointCloud(deskewing_&&!guessFrameId().empty()?guessFrameId():scanMsg->header.frame_id, *scanMsg, scanOut, this->tfListener());
-
-			sensor_msgs::PointCloud2 scanOutDeskewed;
-			if(!pcl_ros::transformPointCloud(scanMsg->header.frame_id, scanOut, scanOutDeskewed, this->tfListener()))
-			{
-				ROS_ERROR("Cannot transform back projected scan from \"%s\" frame to \"%s\" frame at time %fs.",
-						guessFrameId().c_str(), scanMsg->header.frame_id.c_str(), scanMsg->header.stamp.toSec());
-				return;
-			}
-			scanOut = scanOutDeskewed;
-		}
-		else
-		{
-			projection.projectLaser(*scanMsg, scanOut, -1.0, laser_geometry::channel_option::Intensity | laser_geometry::channel_option::Timestamp);
-
-			if(previousStamp() > 0 && !velocityGuess().isNull())
-			{
-				// deskew with constant velocity model
-				sensor_msgs::PointCloud2 scanOutDeskewed;
-				if(!deskew(scanOut, scanOutDeskewed, previousStamp(), velocityGuess()))
-				{
-					ROS_ERROR("Failed to deskew input cloud, aborting odometry update!");
-					return;
-				}
-			}
-		}
+		projection.transformLaserScanToPointCloud(scanMsg->header.frame_id, *scanMsg, scanOut, this->tfListener());
 
 		bool hasIntensity = false;
 		for(unsigned int i=0; i<scanOut.fields.size(); ++i)
@@ -412,7 +339,7 @@ private:
 			pclScan->is_dense = true;
 		}
 
-		LaserScan scan;
+		cv::Mat scan;
 		int maxLaserScans = (int)scanMsg->ranges.size();
 		if(!pclScan->empty() || !pclScanI->empty())
 		{
@@ -474,7 +401,7 @@ private:
 					}
 				}
 				pcl::PointCloud<pcl::PointXYZINormal>::Ptr pclScanINormal;
-				pcl::PointCloud<pcl::PointNormal>::Ptr pclScanNormal;
+				pcl::PointCloud<pcl::PointXYZINormal>::Ptr pclScanNormal;
 				if(hasIntensity)
 				{
 					pclScanINormal.reset(new pcl::PointCloud<pcl::PointXYZINormal>);
@@ -483,9 +410,24 @@ private:
 				}
 				else
 				{
-					pclScanNormal.reset(new pcl::PointCloud<pcl::PointNormal>);
+					pclScanNormal.reset(new pcl::PointCloud<pcl::PointXYZINormal>);
 					pcl::concatenateFields(*pclScan, *normals, *pclScanNormal);
 					scan = util3d::laserScan2dFromPointCloud(*pclScanNormal);
+				}
+
+				if(filtered_scan_pub_.getNumSubscribers())
+				{
+					sensor_msgs::PointCloud2 msg;
+					if(hasIntensity)
+					{
+						pcl::toROSMsg(*pclScanINormal, msg);
+					}
+					else
+					{
+						pcl::toROSMsg(*pclScanNormal, msg);
+					}
+					msg.header = scanMsg->header;
+					filtered_scan_pub_.publish(msg);
 				}
 			}
 			else
@@ -498,33 +440,41 @@ private:
 				{
 					scan = util3d::laserScan2dFromPointCloud(*pclScan);
 				}
+
+				if(filtered_scan_pub_.getNumSubscribers())
+				{
+					sensor_msgs::PointCloud2 msg;
+					if(hasIntensity)
+					{
+						pcl::toROSMsg(*pclScanI, msg);
+					}
+					else
+					{
+						pcl::toROSMsg(*pclScan, msg);
+					}
+					msg.header = scanMsg->header;
+					filtered_scan_pub_.publish(msg);
+				}
 			}
 		}
 
-		if(scanRangeMin_ > 0 || scanRangeMax_ > 0)
-		{
-			scan = util3d::rangeFiltering(scan, scanRangeMin_, scanRangeMax_);
-		}
-
 		rtabmap::SensorData data(
-				LaserScan(scan,
-						maxLaserScans,
-						scanRangeMax_>0&&scanRangeMax_<scanMsg->range_max?scanRangeMax_:scanMsg->range_max,
+				LaserScan(scan, maxLaserScans, scanMsg->range_max,
+						scan.channels()==6?LaserScan::kXYINormal:
+						scan.channels()==5?LaserScan::kXYNormal:
+						scan.channels()==3?LaserScan::kXYI:LaserScan::kXY,
 						localScanTransform),
 				cv::Mat(),
 				cv::Mat(),
-				rtabmap::CameraModel(),
+				CameraModel(),
 				0,
 				rtabmap_ros::timestampFromROS(scanMsg->header.stamp));
 
-		this->processData(data, scanMsg->header);
+		this->processData(data, scanMsg->header.stamp, "");
 	}
 
 	void callbackCloud(const sensor_msgs::PointCloud2ConstPtr& pointCloudMsg)
 	{
-		UASSERT_MSG(pointCloudMsg->data.size() == pointCloudMsg->row_step*pointCloudMsg->height,
-				uFormat("data=%d row_step=%d height=%d", pointCloudMsg->data.size(), pointCloudMsg->row_step, pointCloudMsg->height).c_str());
-		
 		if(scanReceived_)
 		{
 			ROS_ERROR("%s is already receiving scans on \"%s\", but also "
@@ -566,29 +516,7 @@ private:
 			cloudMsg = *pointCloudMsg;
 		}
 
-		if(deskewing_)
-		{
-			if(!guessFrameId().empty())
-			{
-				// deskew with TF
-				if(!deskew(*pointCloudMsg, cloudMsg, guessFrameId(), tfListener(), waitForTransformDuration(), deskewingSlerp_))
-				{
-					ROS_ERROR("Failed to deskew input cloud, aborting odometry update!");
-					return;
-				}
-			}
-			else if(previousStamp() > 0 && !velocityGuess().isNull())
-			{
-				// deskew with constant velocity model
-				if(!deskew(*pointCloudMsg, cloudMsg, previousStamp(), velocityGuess()))
-				{
-					ROS_ERROR("Failed to deskew input cloud, aborting odometry update!");
-					return;
-				}
-			}
-		}
-
-		LaserScan scan;
+		cv::Mat scan;
 		bool hasNormals = false;
 		bool hasIntensity = false;
 		for(unsigned int i=0; i<cloudMsg.fields.size(); ++i)
@@ -630,7 +558,7 @@ private:
 					"cloud is not dense, for convenience it will be set to %d (%dx%d)",
 					scanCloudMaxPoints_, cloudMsg.width, cloudMsg.height);
 		}
-		else if(cloudMsg.height > 1 && scanCloudMaxPoints_ < cloudMsg.height * cloudMsg.width)
+		else if(cloudMsg.height > 1 && scanCloudMaxPoints_ != cloudMsg.height * cloudMsg.width)
 		{
 			NODELET_WARN("IcpOdometry: \"scan_cloud_max_points\" is set to %d but input "
 					"cloud is not dense and has a size of %d (%dx%d), setting to this later size.",
@@ -656,6 +584,13 @@ private:
 				}
 			}
 			scan = util3d::laserScanFromPointCloud(*pclScan);
+			if(filtered_scan_pub_.getNumSubscribers())
+			{
+				sensor_msgs::PointCloud2 msg;
+				pcl::toROSMsg(*pclScan, msg);
+				msg.header = cloudMsg.header;
+				filtered_scan_pub_.publish(msg);
+			}
 		}
 		else if(hasNormals)
 		{
@@ -674,6 +609,13 @@ private:
 				}
 			}
 			scan = util3d::laserScanFromPointCloud(*pclScan);
+			if(filtered_scan_pub_.getNumSubscribers())
+			{
+				sensor_msgs::PointCloud2 msg;
+				pcl::toROSMsg(*pclScan, msg);
+				msg.header = cloudMsg.header;
+				filtered_scan_pub_.publish(msg);
+			}
 		}
 		else if(hasIntensity)
 		{
@@ -712,10 +654,26 @@ private:
 					pcl::PointCloud<pcl::PointXYZINormal>::Ptr pclScanNormal(new pcl::PointCloud<pcl::PointXYZINormal>);
 					pcl::concatenateFields(*pclScan, *normals, *pclScanNormal);
 					scan = util3d::laserScanFromPointCloud(*pclScanNormal);
+
+					if(filtered_scan_pub_.getNumSubscribers())
+					{
+						sensor_msgs::PointCloud2 msg;
+						pcl::toROSMsg(*pclScanNormal, msg);
+						msg.header = cloudMsg.header;
+						filtered_scan_pub_.publish(msg);
+					}
 				}
 				else
 				{
 					scan = util3d::laserScanFromPointCloud(*pclScan);
+
+					if(filtered_scan_pub_.getNumSubscribers())
+					{
+						sensor_msgs::PointCloud2 msg;
+						pcl::toROSMsg(*pclScan, msg);
+						msg.header = cloudMsg.header;
+						filtered_scan_pub_.publish(msg);
+					}
 				}
 			}
 		}
@@ -756,17 +714,34 @@ private:
 					pcl::PointCloud<pcl::PointNormal>::Ptr pclScanNormal(new pcl::PointCloud<pcl::PointNormal>);
 					pcl::concatenateFields(*pclScan, *normals, *pclScanNormal);
 					scan = util3d::laserScanFromPointCloud(*pclScanNormal);
+
+					if(filtered_scan_pub_.getNumSubscribers())
+					{
+						sensor_msgs::PointCloud2 msg;
+						pcl::toROSMsg(*pclScanNormal, msg);
+						msg.header = cloudMsg.header;
+						filtered_scan_pub_.publish(msg);
+					}
 				}
 				else
 				{
 					scan = util3d::laserScanFromPointCloud(*pclScan);
+
+					if(filtered_scan_pub_.getNumSubscribers())
+					{
+						sensor_msgs::PointCloud2 msg;
+						pcl::toROSMsg(*pclScan, msg);
+						msg.header = cloudMsg.header;
+						filtered_scan_pub_.publish(msg);
+					}
 				}
 			}
 		}
 
-		LaserScan laserScan(scan,
-				maxLaserScans,
-				0,
+		LaserScan laserScan(scan, maxLaserScans, 0,
+				scan.channels()==7?LaserScan::kXYZINormal:
+				scan.channels()==6?LaserScan::kXYZNormal:
+				scan.channels()==4?LaserScan::kXYZI:LaserScan::kXYZ,
 				localScanTransform);
 		if(scanRangeMin_ > 0 || scanRangeMax_ > 0)
 		{
@@ -781,28 +756,17 @@ private:
 				laserScan,
 				cv::Mat(),
 				cv::Mat(),
-				rtabmap::CameraModel(),
+				CameraModel(),
 				0,
 				rtabmap_ros::timestampFromROS(cloudMsg.header.stamp));
 
-		this->processData(data, cloudMsg.header);
+		this->processData(data, cloudMsg.header.stamp, cloudMsg.header.frame_id);
 	}
 
 protected:
 	virtual void flushCallbacks()
 	{
 		// flush callbacks
-	}
-
-	void postProcessData(const SensorData & data, const std_msgs::Header & header) const
-	{
-		if(filtered_scan_pub_.getNumSubscribers())
-		{
-			sensor_msgs::PointCloud2 msg;
-			pcl_conversions::fromPCL(*rtabmap::util3d::laserScanToPointCloud2(data.laserScanRaw()), msg);
-			msg.header = header;
-			filtered_scan_pub_.publish(msg);
-		}
 	}
 
 private:
@@ -817,8 +781,6 @@ private:
 	int scanNormalK_;
 	double scanNormalRadius_;
 	double scanNormalGroundUp_;
-	bool deskewing_;
-	bool deskewingSlerp_;
 	std::vector<boost::shared_ptr<rtabmap_ros::PluginInterface> > plugins_;
 	pluginlib::ClassLoader<rtabmap_ros::PluginInterface> plugin_loader_;
 	bool scanReceived_ = false;

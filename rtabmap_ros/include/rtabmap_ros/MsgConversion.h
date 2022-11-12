@@ -74,7 +74,6 @@ rtabmap::Transform transformFromPoseMsg(const geometry_msgs::Pose & msg, bool ig
 
 void toCvCopy(const rtabmap_ros::RGBDImage & image, cv_bridge::CvImagePtr & rgb, cv_bridge::CvImagePtr & depth);
 void toCvShare(const rtabmap_ros::RGBDImageConstPtr & image, cv_bridge::CvImageConstPtr & rgb, cv_bridge::CvImageConstPtr & depth);
-void toCvShare(const rtabmap_ros::RGBDImage & image, const boost::shared_ptr<void const>& trackedObject, cv_bridge::CvImageConstPtr & rgb, cv_bridge::CvImageConstPtr & depth);
 void rgbdImageToROS(const rtabmap::SensorData & data, rtabmap_ros::RGBDImage & msg, const std::string & sensorFrameId);
 rtabmap::SensorData rgbdImageFromROS(const rtabmap_ros::RGBDImageConstPtr & image);
 
@@ -169,14 +168,14 @@ rtabmap::Signature nodeInfoFromROS(const rtabmap_ros::NodeData & msg);
 void nodeInfoToROS(const rtabmap::Signature & signature, rtabmap_ros::NodeData & msg);
 
 std::map<std::string, float> odomInfoToStatistics(const rtabmap::OdometryInfo & info);
-rtabmap::OdometryInfo odomInfoFromROS(const rtabmap_ros::OdomInfo & msg, bool ignoreData = false);
-void odomInfoToROS(const rtabmap::OdometryInfo & info, rtabmap_ros::OdomInfo & msg, bool ignoreData = false);
+rtabmap::OdometryInfo odomInfoFromROS(const rtabmap_ros::OdomInfo & msg);
+void odomInfoToROS(const rtabmap::OdometryInfo & info, rtabmap_ros::OdomInfo & msg);
 
 cv::Mat userDataFromROS(const rtabmap_ros::UserData & dataMsg);
 void userDataToROS(const cv::Mat & data, rtabmap_ros::UserData & dataMsg, bool compress);
 
 rtabmap::Landmarks landmarksFromROS(
-		const std::map<int, std::pair<geometry_msgs::PoseWithCovarianceStamped, float> > & tags,
+		const std::map<int, geometry_msgs::PoseWithCovarianceStamped> & tags,
 		const std::string & frameId,
 		const std::string & odomFrameId,
 		const ros::Time & odomStamp,
@@ -210,17 +209,14 @@ bool convertRGBDMsgs(
 		const std::vector<cv_bridge::CvImageConstPtr> & imageMsgs,
 		const std::vector<cv_bridge::CvImageConstPtr> & depthMsgs,
 		const std::vector<sensor_msgs::CameraInfo> & cameraInfoMsgs,
-		const std::vector<sensor_msgs::CameraInfo> & depthCameraInfoMsgs,
 		const std::string & frameId,
 		const std::string & odomFrameId,
 		const ros::Time & odomStamp,
 		cv::Mat & rgb,
 		cv::Mat & depth,
 		std::vector<rtabmap::CameraModel> & cameraModels,
-		std::vector<rtabmap::StereoCameraModel> & stereoCameraModels,
 		tf::TransformListener & listener,
 		double waitForTransform,
-		bool alreadRectifiedImages,
 		const std::vector<std::vector<rtabmap_ros::KeyPoint> > & localKeyPointsMsgs = std::vector<std::vector<rtabmap_ros::KeyPoint> >(),
 		const std::vector<std::vector<rtabmap_ros::Point3f> > & localPoints3dMsgs = std::vector<std::vector<rtabmap_ros::Point3f> >(),
 		const std::vector<cv::Mat> & localDescriptorsMsgs = std::vector<cv::Mat>(),
@@ -263,20 +259,6 @@ bool convertScan3dMsg(
 		double waitForTransform,
 		int maxPoints = 0,
 		float maxRange = 0.0f);
-
-bool deskew(
-		const sensor_msgs::PointCloud2 & input,
-		sensor_msgs::PointCloud2 & output,
-		const std::string & fixedFrameId,
-		tf::TransformListener & listener,
-		double waitForTransform,
-		bool slerp = false);
-
-bool deskew(
-		const sensor_msgs::PointCloud2 & input,
-		sensor_msgs::PointCloud2 & output,
-		double previousStamp,
-		const rtabmap::Transform & velocity);
 
 }
 

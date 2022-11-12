@@ -57,7 +57,7 @@ public:
 	OdometryROS(bool stereoParams, bool visParams, bool icpParams);
 	virtual ~OdometryROS();
 
-	void processData(rtabmap::SensorData & data, const std_msgs::Header & header);
+	void processData(const rtabmap::SensorData & data, const ros::Time & stamp, const std::string & sensorFrameId);
 
 	bool reset(std_srvs::Empty::Request&, std_srvs::Empty::Response&);
 	bool resetToPose(rtabmap_ros::ResetPose::Request&, rtabmap_ros::ResetPose::Response&);
@@ -70,7 +70,6 @@ public:
 
 	const std::string & frameId() const {return frameId_;}
 	const std::string & odomFrameId() const {return odomFrameId_;}
-	const std::string & guessFrameId() const {return guessFrameId_;}
 	const rtabmap::ParametersMap & parameters() const {return parameters_;}
 	bool isPaused() const {return paused_;}
 	rtabmap::Transform getTransform(const std::string & fromFrameId, const std::string & toFrameId, const ros::Time & stamp) const;
@@ -81,10 +80,6 @@ protected:
 
 	virtual void flushCallbacks() = 0;
 	tf::TransformListener & tfListener() {return tfListener_;}
-	double waitForTransformDuration() const {return waitForTransform_?waitForTransformDuration_:0.0;}
-	rtabmap::Transform velocityGuess() const;
-	double previousStamp() const {return previousStamp_;}
-	virtual void postProcessData(const rtabmap::SensorData & data, const std_msgs::Header & header) const {}
 
 private:
 	void warningLoop(const std::string & subscribedTopicsMsg, bool approxSync);
@@ -117,7 +112,6 @@ private:
 
 	ros::Publisher odomPub_;
 	ros::Publisher odomInfoPub_;
-	ros::Publisher odomInfoLitePub_;
 	ros::Publisher odomLocalMap_;
 	ros::Publisher odomLocalScanMap_;
 	ros::Publisher odomLastFrame_;
@@ -149,7 +143,7 @@ private:
 	bool waitIMUToinit_;
 	bool imuProcessed_;
 	std::map<double, rtabmap::IMU> imus_;
-	std::pair<rtabmap::SensorData, std_msgs::Header > bufferedData_;
+	std::pair<rtabmap::SensorData, std::pair<ros::Time, std::string> > bufferedData_;
 };
 
 }
